@@ -209,7 +209,7 @@ final class Cal {
     }
 
     private static String unescape(String s) {
-        return s.replace("\\n", " ").replace("\\N", " ").replace("\\,", ",").replace("\;", ";").replace("\\\\", "\\").trim();
+        return s.replace("\\n", " ").replace("\\N", " ").replace("\\,", ",").replace("\\;", ";").replace("\\\\", "\\").trim();
     }
 
     private static String get(String url) throws Exception {
