@@ -1971,6 +1971,7 @@ public class MainActivity extends Activity {
     // ---------------------------------------------------------------- Live Bondi
 
     private static final String[][] CAMS = {
+            {"Surfline \u2013 Bondi Beach", "https://www.surfline.com/surf-report/bondi-beach/5842041f4e65fad6a7708bf8"},
             {"Windy \u2013 Bondi Pavilion & North Bondi", "https://www.windy.com/webcams/1721795690"},
             {"Weathercam \u2013 North Bondi RSL", "https://www.weathercamnetwork.com.au/bondi_beach.html"},
             {"Surf-Forecast \u2013 Bondi surf cams", "https://www.surf-forecast.com/breaks/Bondi-Beach/webcams/latest"},
@@ -2005,15 +2006,15 @@ public class MainActivity extends Activity {
         v.addView(place, pl);
         c.tile.addView(v, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
         wireFocus(c, "fav:__live__");
-        c.tile.setOnClickListener(x -> openCam(prefs.getInt("cam", 0)));
+        c.tile.setOnClickListener(x -> openCam(prefs.getInt("cam2", 0)));
         c.tile.setOnLongClickListener(x -> {
             List<String> l = new ArrayList<>();
             List<Runnable> r = new ArrayList<>();
             for (int i = 0; i < CAMS.length; i++) {
                 final int idx = i;
-                l.add((prefs.getInt("cam", 0) == i ? "\u2713  " : "") + CAMS[i][0]);
+                l.add((prefs.getInt("cam2", 0) == i ? "\u2713  " : "") + CAMS[i][0]);
                 r.add(() -> {
-                    prefs.edit().putInt("cam", idx).apply();
+                    prefs.edit().putInt("cam2", idx).apply();
                     openCam(idx);
                 });
             }
