@@ -95,7 +95,8 @@ public class MainActivity extends Activity {
     private String mood = "";
     private Glance.Weather lastWx;
     private FrameLayout splash;
-    private TextView splashHello, splashSub;
+    private TextView splashHello, splashName, splashSub, splashDate;
+    private View splashHelloRow;
     private BroadcastReceiver screenReceiver;
     private final Runnable hideSplash = new Runnable() {
         @Override
@@ -519,13 +520,37 @@ public class MainActivity extends Activity {
         LinearLayout sc = new LinearLayout(this);
         sc.setOrientation(LinearLayout.VERTICAL);
         sc.setGravity(Gravity.CENTER_HORIZONTAL);
-        splashHello = text(54, 0xFFFFFFFF, tfLight);
-        splashHello.setGravity(Gravity.CENTER);
-        sc.addView(splashHello);
-        splashSub = text(19, 0xD9FFFFFF, tfRegular);
+        splashDate = text(13, 0xB3FFFFFF, tfSemi);
+        splashDate.setLetterSpacing(0.28f);
+        splashDate.setGravity(Gravity.CENTER);
+        sc.addView(splashDate);
+
+        LinearLayout helloRow = new LinearLayout(this);
+        helloRow.setOrientation(LinearLayout.HORIZONTAL);
+        helloRow.setGravity(Gravity.BOTTOM);
+        splashHello = text(60, 0xFFFFFFFF, tfLight);
+        splashHello.setLetterSpacing(-0.01f);
+        helloRow.addView(splashHello);
+        splashName = text(60, 0xFFFFFFFF, tfSemi);
+        splashName.setLetterSpacing(-0.01f);
+        splashName.setText(NAME);
+        helloRow.addView(splashName);
+        LinearLayout.LayoutParams hrl = new LinearLayout.LayoutParams(-2, -2);
+        hrl.topMargin = px(14);
+        sc.addView(helloRow, hrl);
+        splashHelloRow = helloRow;
+
+        View rule = new View(this);
+        rule.setBackgroundColor(0x59FFFFFF);
+        LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(px(56), Math.max(1, px(1)));
+        rl.topMargin = px(22);
+        sc.addView(rule, rl);
+
+        splashSub = text(18, 0xE6FFFFFF, tfRegular);
         splashSub.setGravity(Gravity.CENTER);
+        splashSub.setLetterSpacing(0.02f);
         LinearLayout.LayoutParams ssl = new LinearLayout.LayoutParams(-2, -2);
-        ssl.topMargin = px(14);
+        ssl.topMargin = px(20);
         sc.addView(splashSub, ssl);
         splash.addView(sc, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
         splash.setVisibility(View.GONE);
@@ -584,25 +609,28 @@ public class MainActivity extends Activity {
     }
 
     private String weatherLine(Glance.Weather w) {
-        String cond = w.condition == null || w.condition.isEmpty() ? "" : " and " + w.condition.toLowerCase(Locale.ROOT);
-        return w.temp + "\u00B0" + cond + " in Bondi";
+        String cond = w.condition == null || w.condition.isEmpty() ? "" : "   \u00B7   " + w.condition;
+        return w.temp + "\u00B0" + cond + "   \u00B7   Bondi";
     }
 
     private void showWelcome() {
         if (splash == null) return;
         int hour = sydneyHour();
         splashHello.setText(greetingFor(hour));
-        splashSub.setText(lastWx != null ? weatherLine(lastWx)
-                : fmt("EEEE d MMMM", System.currentTimeMillis()));
+        splashDate.setText(fmt("EEEE d MMMM", System.currentTimeMillis()).toUpperCase(Locale.ENGLISH));
+        splashSub.setText(lastWx != null ? weatherLine(lastWx) : "Bondi");
         splash.animate().cancel();
         splash.setVisibility(View.VISIBLE);
         splash.setAlpha(0f);
-        splashHello.setTranslationY(px(12));
-        splash.animate().alpha(1f).setDuration(500).start();
-        splashHello.animate().translationY(0).setDuration(700)
-                .setInterpolator(new DecelerateInterpolator()).start();
+        splashHelloRow.setTranslationY(px(14));
+        splashHelloRow.setAlpha(0f);
+        splashSub.setAlpha(0f);
+        splash.animate().alpha(1f).setDuration(600).start();
+        splashHelloRow.animate().translationY(0).alpha(1f).setStartDelay(150).setDuration(900)
+                .setInterpolator(new DecelerateInterpolator(1.6f)).start();
+        splashSub.animate().alpha(1f).setStartDelay(650).setDuration(800).start();
         handler.removeCallbacks(hideSplash);
-        handler.postDelayed(hideSplash, 4000);
+        handler.postDelayed(hideSplash, 4500);
     }
 
     private void dismissWelcome() {
@@ -627,10 +655,9 @@ public class MainActivity extends Activity {
     }
 
     private String greetingFor(int hour) {
-        if (hour >= 5 && hour < 12) return "Good morning, " + NAME;
-        if (hour >= 12 && hour < 17) return "Good afternoon, " + NAME;
-        if (hour >= 17 && hour < 22) return "Good evening, " + NAME;
-        return "Hey " + NAME + ", it's late";
+        if (hour >= 5 && hour < 12) return "Good morning, ";
+        if (hour >= 12 && hour < 17) return "Good afternoon, ";
+        return "Good evening, ";
     }
 
     void checkForUpdate(final boolean manual) {
