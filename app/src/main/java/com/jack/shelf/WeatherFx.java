@@ -29,7 +29,7 @@ public class WeatherFx extends View {
 
     /** @param intensity 0 = off, 1 = drizzle, 2 = rain, 3 = heavy/storm */
     public void setRain(int intensity, boolean thunder) {
-        int n = intensity <= 0 ? 0 : intensity == 1 ? 55 : intensity == 2 ? 110 : 170;
+        int n = intensity <= 0 ? 0 : intensity == 1 ? 40 : intensity == 2 ? 75 : 120;
         storm = thunder;
         if (n != drops) {
             drops = n;
@@ -55,7 +55,7 @@ public class WeatherFx extends View {
         float d = getResources().getDisplayMetrics().density;
         x[i] = rnd.nextFloat() * (w + h * 0.25f);
         y[i] = anywhere ? rnd.nextFloat() * h : -rnd.nextFloat() * h * 0.3f;
-        len[i] = (14 + rnd.nextFloat() * 22) * d;
+        len[i] = (8 + rnd.nextFloat() * 12) * d;
         speed[i] = (700 + rnd.nextFloat() * 500) * d; // px per second
     }
 
@@ -73,13 +73,13 @@ public class WeatherFx extends View {
         float d = getResources().getDisplayMetrics().density;
         float h = getHeight();
 
-        paint.setStrokeWidth(1.4f * d);
+        paint.setStrokeWidth(0.8f * d);
         for (int i = 0; i < drops; i++) {
             y[i] += speed[i] * dt;
             x[i] -= speed[i] * dt * 0.18f;
             if (y[i] - len[i] > h) seed(i, false);
-            int a = (int) (60 + (len[i] / (36 * d)) * 70);
-            paint.setColor((Math.min(a, 140) << 24) | 0xDDE6F0);
+            int a = (int) (35 + (len[i] / (20 * d)) * 45);
+            paint.setColor((Math.min(a, 85) << 24) | 0xE6EEF6);
             c.drawLine(x[i], y[i], x[i] + len[i] * 0.18f, y[i] - len[i], paint);
         }
 
@@ -89,7 +89,7 @@ public class WeatherFx extends View {
                 nextFlash = now + 5000 + rnd.nextInt(12000);
             }
             if (flash > 0) {
-                c.drawColor(((int) (flash * 90) << 24) | 0xFFFFFF);
+                c.drawColor(((int) (flash * 60) << 24) | 0xFFFFFF);
                 flash = Math.max(0, flash - dt * 3.5f);
             }
         }

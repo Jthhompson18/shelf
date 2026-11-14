@@ -431,7 +431,7 @@ public class MainActivity extends Activity {
         hello.setOrientation(LinearLayout.VERTICAL);
         clock = text(68, 0xFFFFFFFF, tfLight);
         clock.setShadowLayer(px(14), 0, px(2), 0x80000000);
-        clock.setLetterSpacing(-0.02f);
+        clock.setPadding(0, 0, px(10), px(2)); // room for the last digit and its shadow
         hello.addView(clock);
         date = text(17, 0xE6FFFFFF, tfRegular);
         date.setShadowLayer(px(8), 0, px(1), 0x80000000);
@@ -1087,6 +1087,23 @@ public class MainActivity extends Activity {
         });
     }
 
+    /** Netflix looks cleaner as its own app icon on black than as its boxed TV banner. */
+    private boolean iconStyle(App a) {
+        Set<String> on = prefs.getStringSet("iconStyle", null);
+        if (on != null) return on.contains(a.pkg);
+        return a.pkg.startsWith("com.netflix");
+    }
+
+    private void setIconStyle(App a, boolean v) {
+        Set<String> cur = prefs.getStringSet("iconStyle", null);
+        Set<String> on = new HashSet<>();
+        if (cur != null) on.addAll(cur);
+        else for (App x : apps.values()) if (x.pkg.startsWith("com.netflix")) on.add(x.pkg);
+        if (v) on.add(a.pkg);
+        else on.remove(a.pkg);
+        prefs.edit().putStringSet("iconStyle", on).apply();
+    }
+
     private View appTile(final App a, final boolean big) {
         loadVisuals(a);
         final String key = (big ? "fav:" : "all:") + a.pkg;
@@ -1094,7 +1111,15 @@ public class MainActivity extends Activity {
         FrameLayout t = c.tile;
         int h = ((LinearLayout.LayoutParams) t.getLayoutParams()).height;
 
-        if (a.banner != null) {
+        if (iconStyle(a)) {
+            t.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                    new int[]{0xFF1A1A1A, 0xFF050505}));
+            int s = Math.round(h * 0.70f);
+            ImageView iv = new ImageView(this);
+            iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            iv.setImageDrawable(a.icon);
+            t.addView(iv, new FrameLayout.LayoutParams(s, s, Gravity.CENTER));
+        } else if (a.banner != null) {
             GradientDrawable bg = new GradientDrawable();
             bg.setColor(a.color);
             t.setBackground(bg);
@@ -1156,8 +1181,16 @@ public class MainActivity extends Activity {
     // ---------------------------------------------------------------- Xbox (HDMI input)
 
     private View xboxTile() {
-        View root = textTile("fav:__xbox__", "Xbox", "Xbox", 0xFF2FA343, 0xFF0B5A1C);
-        View tile = root.findViewWithTag("tile");
+        final Cell c = cell(true, "fav:__xbox__", "Xbox");
+        c.tile.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0xFF22A03F, 0xFF0A4E18}));
+        ImageView glyph = new ImageView(this);
+        glyph.setImageDrawable(new ControllerDrawable(0xFFFFFFFF, 0xFF167A2C));
+        int gh = Math.round(((LinearLayout.LayoutParams) c.tile.getLayoutParams()).height * 0.62f);
+        c.tile.addView(glyph, new FrameLayout.LayoutParams(Math.round(gh * 1.5f), gh, Gravity.CENTER));
+        wireFocus(c, "fav:__xbox__");
+        View root = c.root;
+        View tile = c.tile;
         tile.setOnClickListener(v -> openXbox());
         tile.setOnLongClickListener(v -> {
             List<String> l = new ArrayList<>();
@@ -1468,6 +1501,14 @@ public class MainActivity extends Activity {
                 h.add(a.pkg);
                 saveHidden(h);
                 lastFocused = null;
+                rebuildRows();
+            });
+        }
+        if (a.banner != null) {
+            final boolean iconNow = iconStyle(a);
+            labels.add(iconNow ? "Use the app's banner" : "Use the app's icon (cleaner)");
+            acts.add(() -> {
+                setIconStyle(a, !iconNow);
                 rebuildRows();
             });
         }
