@@ -89,6 +89,11 @@ public class MainActivity extends Activity {
     private long wallChangedAt;
 
     private LinearLayout favRow, allRow;
+    private FrameLayout appsPanel;
+    private LinearLayout appsGrid;
+    private android.widget.ScrollView appsScroll;
+    private boolean appsOpen;
+    private View wxCard, newsCard;
     private HorizontalScrollView favScroll, allScroll;
     private static final String NAME = "Jack";
     private WeatherFx fx;
@@ -248,12 +253,14 @@ public class MainActivity extends Activity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        if (appsOpen) closeApps(false);
         goToStart();
     }
 
     @Override
     public void onBackPressed() {
-        goToStart();
+        if (appsOpen) closeApps(true);
+        else goToStart();
     }
 
     private void goToStart() {
@@ -468,6 +475,7 @@ public class MainActivity extends Activity {
         wll.topMargin = px(4);
         wx.addView(wxLine, wll);
         side.addView(wx, new LinearLayout.LayoutParams(px(300), -2));
+        wxCard = wx;
 
         LinearLayout news = glass();
         TextView newsLabel = text(12, 0xCCFFFFFF, tfSemi);
@@ -485,6 +493,8 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(px(300), -2);
         nlp.topMargin = px(12);
         side.addView(news, nlp);
+        newsCard = news;
+        applyCardPrefs();
 
         FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
         slp.topMargin = px(32);
@@ -495,7 +505,7 @@ public class MainActivity extends Activity {
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setGravity(Gravity.BOTTOM);
-        col.setPadding(px(44), 0, 0, px(8));
+        col.setPadding(px(44), 0, 0, px(34));
         col.setClipChildren(false);
         col.setClipToPadding(false);
 
@@ -510,8 +520,37 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(-1, -2);
         alp.topMargin = -px(14);
         col.addView(allScroll, alp);
+        allScroll.setVisibility(View.GONE); // replaced by the Apps grid
 
         root.addView(col, new FrameLayout.LayoutParams(-1, -1));
+
+        // Full-screen Apps grid
+        appsPanel = new FrameLayout(this);
+        appsPanel.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0xE6080A0F, 0xF2050608}));
+        LinearLayout ap = new LinearLayout(this);
+        ap.setOrientation(LinearLayout.VERTICAL);
+        ap.setPadding(px(58), px(34), px(40), 0);
+        ap.setClipChildren(false);
+        ap.setClipToPadding(false);
+        TextView appsTitle = text(30, 0xFFFFFFFF, tfSemi);
+        appsTitle.setText("Apps");
+        ap.addView(appsTitle);
+        appsScroll = new android.widget.ScrollView(this);
+        appsScroll.setVerticalScrollBarEnabled(false);
+        appsScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        appsScroll.setClipChildren(false);
+        appsScroll.setClipToPadding(false);
+        appsScroll.setPadding(0, px(6), 0, px(40));
+        appsGrid = new LinearLayout(this);
+        appsGrid.setOrientation(LinearLayout.VERTICAL);
+        appsGrid.setClipChildren(false);
+        appsGrid.setClipToPadding(false);
+        appsScroll.addView(appsGrid);
+        ap.addView(appsScroll, new LinearLayout.LayoutParams(-1, -1));
+        appsPanel.addView(ap, new FrameLayout.LayoutParams(-1, -1));
+        appsPanel.setVisibility(View.GONE);
+        root.addView(appsPanel, new FrameLayout.LayoutParams(-1, -1));
 
         // Welcome screen shown when the projector is switched on
         splash = new FrameLayout(this);
@@ -948,12 +987,12 @@ public class MainActivity extends Activity {
             favRow.addView(getAppleTvTile());
         }
         if (!prefs.getBoolean("noXbox", false)) favRow.addView(xboxTile());
+        favRow.addView(appsTile());
         favRow.addView(settingsTile());
 
-        Set<String> hid = hidden();
-        Set<String> pinned = new HashSet<>(favs());
-        for (App a : sortedApps()) {
-            if (!hid.contains(a.pkg) && !pinned.contains(a.pkg)) allRow.addView(appTile(a, false));
+        if (appsOpen) {
+            fillApps(keep);
+            return;
         }
 
         View target = keep != null ? findTile(keep) : null;
@@ -1208,6 +1247,100 @@ public class MainActivity extends Activity {
                 Toast.LENGTH_LONG).show();
     }
 
+    // ---------------------------------------------------------------- Apps grid
+
+    private View appsTile() {
+        View root = textTile("fav:__apps__", "All apps", "Apps", 0xFF454A57, 0xFF1C1F27);
+        root.findViewWithTag("tile").setOnClickListener(v -> openApps());
+        return root;
+    }
+
+    private void openApps() {
+        appsOpen = true;
+        favScroll.setDescendantFocusability(android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+        appsPanel.setVisibility(View.VISIBLE);
+        appsPanel.setAlpha(0f);
+        appsPanel.animate().alpha(1f).setDuration(220).start();
+        appsScroll.scrollTo(0, 0);
+        fillApps(null);
+    }
+
+    private void closeApps(boolean animate) {
+        appsOpen = false;
+        favScroll.setDescendantFocusability(android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS);
+        if (animate) {
+            appsPanel.animate().alpha(0f).setDuration(200).withEndAction(new Runnable() {
+                @Override
+                public void run() {
+                    appsPanel.setVisibility(View.GONE);
+                    appsGrid.removeAllViews();
+                }
+            }).start();
+        } else {
+            appsPanel.setVisibility(View.GONE);
+            appsGrid.removeAllViews();
+        }
+        View t = findTile("fav:__apps__");
+        if (t != null) t.requestFocus();
+    }
+
+    private void fillApps(String keep) {
+        appsGrid.removeAllViews();
+        Set<String> hid = hidden();
+        List<App> list = new ArrayList<>();
+        for (App a : sortedApps()) if (!hid.contains(a.pkg)) list.add(a);
+        int perRow = 5;
+        LinearLayout row = null;
+        for (int i = 0; i < list.size(); i++) {
+            if (i % perRow == 0) {
+                row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setClipChildren(false);
+                row.setClipToPadding(false);
+                row.setPadding(px(10), px(18), 0, px(2));
+                appsGrid.addView(row);
+            }
+            row.addView(appTile(list.get(i), false));
+        }
+        View target = null;
+        if (keep != null) {
+            for (int r = 0; r < appsGrid.getChildCount() && target == null; r++) {
+                LinearLayout rr = (LinearLayout) appsGrid.getChildAt(r);
+                for (int c = 0; c < rr.getChildCount(); c++) {
+                    if (keep.equals(rr.getChildAt(c).getTag())) {
+                        target = rr.getChildAt(c).findViewWithTag("tile");
+                        break;
+                    }
+                }
+            }
+        }
+        if (target == null && appsGrid.getChildCount() > 0) {
+            target = ((LinearLayout) appsGrid.getChildAt(0)).getChildAt(0).findViewWithTag("tile");
+        }
+        final View t = target;
+        if (t != null) handler.post(new Runnable() {
+            @Override
+            public void run() {
+                t.requestFocus();
+            }
+        });
+    }
+
+    // ---------------------------------------------------------------- weather / news switches
+
+    private void applyCardPrefs() {
+        wxCard.setVisibility(prefs.getBoolean("hideWeather", false) ? View.GONE : View.VISIBLE);
+        newsCard.setVisibility(prefs.getBoolean("hideNews", false) ? View.GONE : View.VISIBLE);
+        LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) newsCard.getLayoutParams();
+        lp.topMargin = wxCard.getVisibility() == View.VISIBLE ? px(12) : 0;
+        newsCard.setLayoutParams(lp);
+    }
+
+    private void toggle(String key) {
+        prefs.edit().putBoolean(key, !prefs.getBoolean(key, false)).apply();
+        applyCardPrefs();
+    }
+
     private View updateTile() {
         View root = textTile("fav:__update__", "Install update", "Update", 0xFF2F7CF6, 0xFF1550C8);
         root.findViewWithTag("tile").setOnClickListener(v -> Updater.install(this));
@@ -1329,7 +1462,7 @@ public class MainActivity extends Activity {
             });
         }
         if (!inTopRow) {
-            labels.add("Hide from this row");
+            labels.add("Hide app");
             acts.add(() -> {
                 Set<String> h = hidden();
                 h.add(a.pkg);
@@ -1358,6 +1491,12 @@ public class MainActivity extends Activity {
             labels.add("Next background");
             acts.add(() -> nextWallpaper(true));
         }
+        final boolean wxHidden = prefs.getBoolean("hideWeather", false);
+        labels.add(wxHidden ? "Show weather" : "Hide weather");
+        acts.add(() -> toggle("hideWeather"));
+        final boolean newsHidden = prefs.getBoolean("hideNews", false);
+        labels.add(newsHidden ? "Show news headlines" : "Hide news headlines");
+        acts.add(() -> toggle("hideNews"));
         labels.add("Check for updates");
         acts.add(() -> checkForUpdate(true));
         labels.add("Show hidden apps");
