@@ -148,10 +148,36 @@ public class MainActivity extends Activity {
     private TextView splashHello, splashName, splashSub, splashDate;
     private View splashHelloRow;
     private BroadcastReceiver screenReceiver;
+    private boolean briefAfterSplash, autoBrief;
+    private ImageView wxIcon;
+    private android.media.SoundPool sounds;
+    private int sTick, sSelect;
+    private long lastKeyAt;
+    private final Runnable autoCloseToday = new Runnable() {
+        @Override
+        public void run() {
+            autoBrief = false;
+            if (todayOpen) closeToday();
+        }
+    };
     private final Runnable hideSplash = new Runnable() {
         @Override
         public void run() {
             dismissWelcome();
+            if (briefAfterSplash) {
+                briefAfterSplash = false;
+                handler.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!todayOpen && !appsOpen) {
+                            openToday();
+                            autoBrief = true;
+                            handler.removeCallbacks(autoCloseToday);
+                            handler.postDelayed(autoCloseToday, 15000);
+                        }
+                    }
+                }, 750);
+            }
         }
     };
     private TextView clock, date, wxPlace, wxTemp, wxCond, wxRange, headline;
@@ -228,6 +254,16 @@ public class MainActivity extends Activity {
         dp = getResources().getDisplayMetrics().density;
         prefs = getSharedPreferences("shelf", MODE_PRIVATE);
         loadFonts();
+        try {
+            sounds = new android.media.SoundPool.Builder().setMaxStreams(2)
+                    .setAudioAttributes(new android.media.AudioAttributes.Builder()
+                            .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+                    .build();
+            sTick = sounds.load(this, R.raw.tick, 1);
+            sSelect = sounds.load(this, R.raw.select, 1);
+        } catch (Throwable ignored) {
+        }
         findWallpapers();
         mood = moodFor(null);
         setContentView(buildUi());
@@ -557,6 +593,11 @@ public class MainActivity extends Activity {
         wxLine.setGravity(Gravity.BOTTOM);
         wxTemp = text(32, 0xFFFFFFFF, tfLight);
         wxTemp.setText("--°");
+        wxIcon = new ImageView(this);
+        LinearLayout.LayoutParams wil = new LinearLayout.LayoutParams(px(30), px(30));
+        wil.rightMargin = px(10);
+        wil.gravity = Gravity.CENTER_VERTICAL;
+        wxLine.addView(wxIcon, wil);
         wxLine.addView(wxTemp);
         LinearLayout wxRight = new LinearLayout(this);
         wxRight.setOrientation(LinearLayout.VERTICAL);
@@ -814,6 +855,12 @@ public class MainActivity extends Activity {
         splashHelloRow.animate().translationY(0).alpha(1f).setStartDelay(150).setDuration(900)
                 .setInterpolator(new DecelerateInterpolator(1.6f)).start();
         splashSub.animate().alpha(1f).setStartDelay(650).setDuration(800).start();
+        String todayKey = fmt("yyyyMMdd", System.currentTimeMillis());
+        if (!prefs.getBoolean("noBriefing", false) && hour >= 5 && hour < 11
+                && !todayKey.equals(prefs.getString("briefedOn", ""))) {
+            briefAfterSplash = true;
+            prefs.edit().putString("briefedOn", todayKey).apply();
+        }
         handler.removeCallbacks(hideSplash);
         handler.postDelayed(hideSplash, 4500);
     }
@@ -832,6 +879,14 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
+        if (e.getAction() == KeyEvent.ACTION_DOWN) {
+            lastKeyAt = android.os.SystemClock.uptimeMillis();
+            int k = e.getKeyCode();
+            if (e.getRepeatCount() == 0 && !dreaming && (k == KeyEvent.KEYCODE_DPAD_CENTER
+                    || k == KeyEvent.KEYCODE_ENTER) && splash.getVisibility() != View.VISIBLE) {
+                play(sSelect, 0.35f);
+            }
+        }
         if (dreaming) {
             if (e.getAction() == KeyEvent.ACTION_UP) wake();
             return true;
@@ -839,7 +894,10 @@ public class MainActivity extends Activity {
         if (todayOpen) {
             int k = e.getKeyCode();
             if (e.getAction() == KeyEvent.ACTION_UP && (k == KeyEvent.KEYCODE_BACK
-                    || k == KeyEvent.KEYCODE_DPAD_CENTER || k == KeyEvent.KEYCODE_ENTER)) {
+                    || k == KeyEvent.KEYCODE_DPAD_CENTER || k == KeyEvent.KEYCODE_ENTER
+                    || autoBrief)) {
+                autoBrief = false;
+                handler.removeCallbacks(autoCloseToday);
                 closeToday();
             }
             resetIdle();
@@ -890,6 +948,7 @@ public class MainActivity extends Activity {
                 if (w != null) {
                     lastWx = w;
                     applyWeather(w);
+                    wxIcon.setImageDrawable(new WeatherIcon(w.code, w.isDay));
                     wxTemp.setText(w.temp + "°");
                     wxCond.setText(w.condition);
                     wxRange.setText("H " + w.hi + "°   L " + w.lo + "°");
@@ -1276,7 +1335,11 @@ public class MainActivity extends Activity {
                 c.name.animate().alpha(has ? 1f : 0f)
                         .translationY(has ? px(6) : 0)
                         .setDuration(180).start();
-                if (has) lastFocused = key;
+                if (has) {
+                    lastFocused = key;
+                    // only when the user moved, not when focus is set by code
+                    if (android.os.SystemClock.uptimeMillis() - lastKeyAt < 400) play(sTick, 0.22f);
+                }
             }
         });
     }
@@ -1821,6 +1884,19 @@ public class MainActivity extends Activity {
         return t;
     }
 
+    private static boolean isDayAt(Glance.Day d, String hhmm) {
+        if (hhmm == null || d.sunrise == null || d.sunset == null) return true;
+        return hhmm.compareTo(d.sunrise) >= 0 && hhmm.compareTo(d.sunset) < 0;
+    }
+
+    private void play(int id, float vol) {
+        if (sounds == null || id == 0 || prefs.getBoolean("noSounds", false)) return;
+        try {
+            sounds.play(id, vol, vol, 1, 0, 1f);
+        } catch (Throwable ignored) {
+        }
+    }
+
     private String hm(String hhmm) {
         if (hhmm == null) return "";
         if (DateFormat.is24HourFormat(this)) return hhmm;
@@ -1862,6 +1938,13 @@ public class MainActivity extends Activity {
             big.setGravity(Gravity.BOTTOM);
             TextView temp = text(56, 0xFFFFFFFF, tfLight);
             temp.setText((lastWx != null ? lastWx.temp : d.hTemp[0]) + "\u00B0");
+            ImageView bigIcon = new ImageView(this);
+            bigIcon.setImageDrawable(new WeatherIcon(lastWx != null ? lastWx.code : d.code,
+                    lastWx != null ? lastWx.isDay : isDayAt(d, d.hTime[0])));
+            LinearLayout.LayoutParams bil0 = new LinearLayout.LayoutParams(px(52), px(52));
+            bil0.rightMargin = px(14);
+            bil0.bottomMargin = px(12);
+            big.addView(bigIcon, bil0);
             big.addView(temp);
             LinearLayout bi = new LinearLayout(this);
             bi.setOrientation(LinearLayout.VERTICAL);
@@ -1892,6 +1975,11 @@ public class MainActivity extends Activity {
                 TextView ht = text(13, 0xB3FFFFFF, tfMedium);
                 ht.setText(i == 0 ? "Now" : hm(d.hTime[i]).replace(":00", ""));
                 h.addView(ht);
+                ImageView hi = new ImageView(this);
+                hi.setImageDrawable(new WeatherIcon(d.hCode[i], isDayAt(d, d.hTime[i])));
+                LinearLayout.LayoutParams hil0 = new LinearLayout.LayoutParams(px(24), px(24));
+                hil0.topMargin = px(6);
+                h.addView(hi, hil0);
                 TextView hv = text(22, 0xFFFFFFFF, tfLight);
                 hv.setText(d.hTemp[i] + "\u00B0");
                 LinearLayout.LayoutParams hvl = new LinearLayout.LayoutParams(-2, -2);
@@ -2307,6 +2395,12 @@ public class MainActivity extends Activity {
         final boolean surfHidden = prefs.getBoolean("hideSurf", false);
         labels.add(surfHidden ? "Show surf report" : "Hide surf report");
         acts.add(() -> toggle("hideSurf"));
+        final boolean soundsOff = prefs.getBoolean("noSounds", false);
+        labels.add(soundsOff ? "Turn navigation sounds on" : "Turn navigation sounds off");
+        acts.add(() -> prefs.edit().putBoolean("noSounds", !soundsOff).apply());
+        final boolean briefOff = prefs.getBoolean("noBriefing", false);
+        labels.add(briefOff ? "Turn morning briefing on" : "Turn morning briefing off");
+        acts.add(() -> prefs.edit().putBoolean("noBriefing", !briefOff).apply());
         final boolean dreamOff = prefs.getBoolean("noDream", false);
         labels.add(dreamOff ? "Turn screensaver on" : "Turn screensaver off");
         acts.add(() -> {
