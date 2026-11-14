@@ -29,8 +29,26 @@ public class HomeWatcher extends AccessibilityService {
         return instance.performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN);
     }
 
+    private android.content.BroadcastReceiver wakeReceiver;
+    private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
+
+    private void openShelf(long delay) {
+        handler.postDelayed(() -> {
+            Intent i = new Intent(this, MainActivity.class);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+            try {
+                startActivity(i);
+            } catch (Exception ignored) {
+            }
+        }, delay);
+    }
+
     @Override
     public void onDestroy() {
+        try {
+            if (wakeReceiver != null) unregisterReceiver(wakeReceiver);
+        } catch (Exception ignored) {
+        }
         instance = null;
         super.onDestroy();
     }
@@ -43,6 +61,18 @@ public class HomeWatcher extends AccessibilityService {
         super.onServiceConnected();
         instance = this;
         refreshHomes();
+        // Open Shelf whenever the projector wakes from standby...
+        wakeReceiver = new android.content.BroadcastReceiver() {
+            @Override
+            public void onReceive(android.content.Context c, Intent i) {
+                openShelf(1200);
+            }
+        };
+        android.content.IntentFilter f = new android.content.IntentFilter(Intent.ACTION_SCREEN_ON);
+        f.addAction(Intent.ACTION_USER_PRESENT);
+        registerReceiver(wakeReceiver, f);
+        // ...and right after a full restart.
+        if (SystemClock.elapsedRealtime() < 10 * 60 * 1000L) openShelf(2500);
     }
 
     private void refreshHomes() {
