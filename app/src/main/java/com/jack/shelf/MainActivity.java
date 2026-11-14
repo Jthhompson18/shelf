@@ -468,7 +468,10 @@ public class MainActivity extends Activity {
         clock.setSingleLine(true);
         clock.setFontFeatureSettings("tnum"); // equal-width digits so the clock never changes size
         clock.setMinWidth(Math.round(clock.getPaint().measureText("88:88")) + px(14));
-        hello.addView(clock);
+        // Fixed, roomy width: the clock never re-measures, so no digit can be clipped.
+        hello.addView(clock, new LinearLayout.LayoutParams(px(320), -2));
+        hello.setClipChildren(false);
+        hello.setClipToPadding(false);
         date = text(17, 0xE6FFFFFF, tfRegular);
         date.setShadowLayer(px(8), 0, px(1), 0x80000000);
         LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(-2, -2);
@@ -1693,12 +1696,16 @@ public class MainActivity extends Activity {
         v.setOrientation(LinearLayout.VERTICAL);
         v.setGravity(Gravity.CENTER);
         TextView dow = text(12, 0xFFFF6B5E, tfSemi);
+        dow.setGravity(Gravity.CENTER);
         dow.setLetterSpacing(0.14f);
         dow.setText(fmt("EEEE", System.currentTimeMillis()).toUpperCase(Locale.ENGLISH));
-        v.addView(dow);
+        v.addView(dow, new LinearLayout.LayoutParams(-1, -2));
         TextView num = text(38, 0xFFFFFFFF, tfLight);
+        num.setGravity(Gravity.CENTER);
         num.setText(fmt("d", System.currentTimeMillis()));
-        v.addView(num);
+        LinearLayout.LayoutParams nl0 = new LinearLayout.LayoutParams(-1, -2);
+        nl0.topMargin = px(2);
+        v.addView(num, nl0);
         c.tile.addView(v, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
         wireFocus(c, "fav:__today__");
         c.tile.setOnClickListener(x -> openToday());
