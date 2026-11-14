@@ -19,26 +19,26 @@ jobs:
           gradle-version: '8.7'
       - name: Fetch background photos (Unsplash License)
         run: |
-          command -v convert || (sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick)
           mkdir -p app/src/main/assets/wallpapers
-          fetch() { # name unsplash-id
-            if curl -fsSL --retry 3 -o /tmp/w.jpg "https://unsplash.com/photos/$2/download?force=true&w=2400"; then
-              convert /tmp/w.jpg -auto-orient -resize '1920x1080^' -gravity center -extent 1920x1080 -strip -quality 84 "app/src/main/assets/wallpapers/$1.jpg" && echo "ok $1" || echo "skip $1"
-            else echo "download failed $1"; fi
+          fetch() { # name images.unsplash.com-photo-id
+            url="https://images.unsplash.com/$2?w=1920&h=1080&fit=crop&crop=entropy&q=82&fm=jpg"
+            if curl -fsSL --retry 3 -A "Mozilla/5.0" -o "app/src/main/assets/wallpapers/$1.jpg" "$url"; then
+              echo "ok $1 $(stat -c %s app/src/main/assets/wallpapers/$1.jpg)"
+            else echo "download failed $1"; rm -f "app/src/main/assets/wallpapers/$1.jpg"; fi
           }
           # Sunny / clear days
-          fetch day_01 8Zfp8dqi2VA      # Bondi from above
-          fetch day_02 9OJwwOsQPCQ      # Espiritu Santo, Vanuatu
-          fetch day_03 fWn5B2aKjYA      # Moraine Lake
-          fetch day_04 -luRXnytPRY      # Peyto Lake
-          fetch day_05 IEgpEbs77PA      # Jiuzhaigou
+          fetch day_01 photo-1755792023406-3163add49fa2    # Bondi from above
+          fetch day_02 photo-1768190691654-09c492f220f4    # Espiritu Santo, Vanuatu
+          fetch day_03 photo-1562375121-ea1bc3e8fc10       # Moraine Lake
+          fetch day_04 photo-1508899005055-fb1677e7b887    # Peyto Lake
+          fetch day_05 photo-1766119871772-0bf74304a9e7    # Jiuzhaigou
           # Cloudy / rainy days
-          fetch cloud_01 3ikyb_8fZlo    # Lake Hawea under cloud
-          fetch cloud_02 zJ-Cj3nT6EU    # Bondi barrel wave, black and white
+          fetch cloud_01 photo-1765571093286-e492fd3ca368  # Lake Hawea under cloud
+          fetch cloud_02 photo-1522151501326-e0dc6eb350e1  # Bondi barrel wave
           # Night
-          fetch night_01 z1dGIghGc9A    # Milky Way over a beach house
-          fetch night_02 mTWyRFSjeEk    # Stars over the water
-          fetch night_03 4DwcMQ_bpzY    # Stars over a calm lake
+          fetch night_01 photo-1674718061623-2d1902f6889d  # Milky Way over a beach house
+          fetch night_02 photo-1696187489150-c692cc723196  # Stars over the water
+          fetch night_03 photo-1743364892984-1b7e34054a6b  # Stars over a calm lake
           ls -la app/src/main/assets/wallpapers
       - name: Build
         run: gradle assembleDebug --no-daemon
