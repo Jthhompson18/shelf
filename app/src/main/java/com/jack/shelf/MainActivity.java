@@ -1122,12 +1122,13 @@ public class MainActivity extends Activity {
         shine.setVisibility(View.INVISIBLE);
         final int tw = ((LinearLayout.LayoutParams) c.tile.getLayoutParams()).width;
         final int th = ((LinearLayout.LayoutParams) c.tile.getLayoutParams()).height;
-        c.tile.addView(shine, new FrameLayout.LayoutParams(Math.round(tw * 0.45f), th * 2, Gravity.CENTER_VERTICAL));
+        final boolean shineOn = false; // removed at Jack's request; kept switchable
+        if (shineOn) c.tile.addView(shine, new FrameLayout.LayoutParams(Math.round(tw * 0.45f), th * 2, Gravity.CENTER_VERTICAL));
         c.tile.setOnFocusChangeListener(new View.OnFocusChangeListener() {
             @Override
             public void onFocusChange(View v, boolean has) {
                 shine.animate().cancel();
-                if (has) {
+                if (has && shineOn) {
                     shine.setTranslationX(-tw * 0.6f);
                     shine.setVisibility(View.VISIBLE);
                     shine.animate().translationX(tw * 1.1f).setStartDelay(120).setDuration(750)
