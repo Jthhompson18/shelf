@@ -14,19 +14,10 @@ android {
         versionName "1.0." + (System.getenv('GITHUB_RUN_NUMBER') ?: '0')
     }
 
-    signingConfigs {
-        release {
-            storeFile file('release.jks')
-            storePassword System.getenv('KS_PASS')
-            keyAlias 'shelf'
-            keyPassword System.getenv('KS_PASS')
-        }
-    }
 
     buildTypes {
-        release {
+        debug {
             minifyEnabled false
-            signingConfig signingConfigs.release
         }
     }
 
