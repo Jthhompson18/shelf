@@ -445,6 +445,9 @@ public class MainActivity extends Activity {
         clock = text(68, 0xFFFFFFFF, tfLight);
         clock.setShadowLayer(px(14), 0, px(2), 0x80000000);
         clock.setPadding(0, 0, px(10), px(2)); // room for the last digit and its shadow
+        clock.setSingleLine(true);
+        clock.setFontFeatureSettings("tnum"); // equal-width digits so the clock never changes size
+        clock.setMinWidth(Math.round(clock.getPaint().measureText("88:88")) + px(14));
         hello.addView(clock);
         date = text(17, 0xE6FFFFFF, tfRegular);
         date.setShadowLayer(px(8), 0, px(1), 0x80000000);
