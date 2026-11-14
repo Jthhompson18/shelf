@@ -55,6 +55,36 @@ final class Updater {
         }
     }
 
+    /** Downloads the APK completely and checks it's a real, readable app. Returns a problem or null. */
+    private static String download(java.io.File f) {
+        try {
+            HttpURLConnection h = (HttpURLConnection) new URL(APK).openConnection();
+            h.setInstanceFollowRedirects(true);
+            h.setConnectTimeout(15000);
+            h.setReadTimeout(30000);
+            h.setRequestProperty("Accept-Encoding", "identity");
+            h.setRequestProperty("User-Agent", "Shelf");
+            int code = h.getResponseCode();
+            if (code != 200) return "server replied " + code;
+            long expected = h.getContentLength();
+            long total = 0;
+            try (InputStream in = h.getInputStream(); OutputStream out = new java.io.FileOutputStream(f)) {
+                byte[] b = new byte[65536];
+                int r;
+                while ((r = in.read(b)) != -1) {
+                    out.write(b, 0, r);
+                    total += r;
+                }
+            } finally {
+                h.disconnect();
+            }
+            if (expected > 0 && total != expected) return "download incomplete (" + total + " of " + expected + " bytes)";
+            return null;
+        } catch (Throwable t) {
+            return "download failed: " + t.getMessage();
+        }
+    }
+
     static void install(final Context c) {
         if (Build.VERSION.SDK_INT >= 26 && !c.getPackageManager().canRequestPackageInstalls()) {
             Toast.makeText(c, "Allow Shelf to install updates, then press Back and select Update again",
@@ -75,20 +105,29 @@ final class Updater {
         new Thread(() -> {
             String err = null;
             try {
+                java.io.File f = new java.io.File(app.getCacheDir(), "update.apk");
+                String problem = null;
+                for (int attempt = 0; attempt < 2; attempt++) {
+                    problem = download(f);
+                    if (problem == null) break;
+                }
+                if (problem != null) throw new Exception(problem);
+                if (app.getPackageManager().getPackageArchiveInfo(f.getPath(), 0) == null) {
+                    throw new Exception("the downloaded file isn't a valid app (" + f.length() + " bytes)");
+                }
+
                 PackageInstaller pi = app.getPackageManager().getPackageInstaller();
                 PackageInstaller.SessionParams sp =
                         new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
                 sp.setAppPackageName(app.getPackageName());
+                sp.setSize(f.length());
                 int id = pi.createSession(sp);
                 try (PackageInstaller.Session s = pi.openSession(id)) {
-                    HttpURLConnection h = (HttpURLConnection) new URL(APK).openConnection();
-                    h.setInstanceFollowRedirects(true);
-                    h.setConnectTimeout(15000);
-                    h.setReadTimeout(30000);
-                    try (InputStream in = h.getInputStream(); OutputStream out = s.openWrite("shelf.apk", 0, -1)) {
+                    try (InputStream in = new java.io.FileInputStream(f);
+                         OutputStream out = s.openWrite("base.apk", 0, f.length())) {
                         byte[] b = new byte[65536];
                         int r;
-                        while ((r = in.read(b)) > 0) out.write(b, 0, r);
+                        while ((r = in.read(b)) != -1) out.write(b, 0, r);
                         s.fsync(out);
                     }
                     int flags = PendingIntent.FLAG_UPDATE_CURRENT;
