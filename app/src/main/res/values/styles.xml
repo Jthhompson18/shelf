@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#FF07070B</color>
+    <string name="acc_desc">Opens Shelf whenever the projector\'s built-in home screen appears, so the Home button always takes you to Shelf.</string>
+    <style name="AppTheme" parent="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:windowDisablePreview">false</item>
+    </style>
+</resources>

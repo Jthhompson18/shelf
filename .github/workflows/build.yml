@@ -1,0 +1,56 @@
+name: Build Shelf
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Fetch background photos (Unsplash License)
+        run: |
+          command -v convert || (sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick)
+          mkdir -p app/src/main/assets/wallpapers
+          fetch() { # name unsplash-id
+            if curl -fsSL --retry 3 -o /tmp/w.jpg "https://unsplash.com/photos/$2/download?force=true&w=2400"; then
+              convert /tmp/w.jpg -auto-orient -resize '1920x1080^' -gravity center -extent 1920x1080 -strip -quality 84 "app/src/main/assets/wallpapers/$1.jpg" && echo "ok $1" || echo "skip $1"
+            else echo "download failed $1"; fi
+          }
+          # Sunny / clear days
+          fetch day_01 8Zfp8dqi2VA      # Bondi from above
+          fetch day_02 9OJwwOsQPCQ      # Espiritu Santo, Vanuatu
+          fetch day_03 fWn5B2aKjYA      # Moraine Lake
+          fetch day_04 -luRXnytPRY      # Peyto Lake
+          fetch day_05 IEgpEbs77PA      # Jiuzhaigou
+          # Cloudy / rainy days
+          fetch cloud_01 3ikyb_8fZlo    # Lake Hawea under cloud
+          fetch cloud_02 zJ-Cj3nT6EU    # Bondi barrel wave, black and white
+          # Night
+          fetch night_01 z1dGIghGc9A    # Milky Way over a beach house
+          fetch night_02 mTWyRFSjeEk    # Stars over the water
+          fetch night_03 4DwcMQ_bpzY    # Stars over a calm lake
+          ls -la app/src/main/assets/wallpapers
+      - name: Restore signing key
+        run: echo "$KS_B64" | base64 -d > app/release.jks
+        env:
+          KS_B64: ${{ secrets.KS_B64 }}
+      - name: Build
+        run: gradle assembleRelease --no-daemon
+        env:
+          KS_PASS: ${{ secrets.KS_PASS }}
+      - name: Publish release
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk shelf.apk
+          gh release create "v${{ github.run_number }}" shelf.apk --title "Shelf build ${{ github.run_number }}" --notes "Install on the projector with Downloader." --latest
+        env:
+          GH_TOKEN: ${{ github.token }}
