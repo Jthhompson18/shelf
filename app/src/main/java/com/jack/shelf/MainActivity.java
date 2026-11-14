@@ -97,6 +97,25 @@ public class MainActivity extends Activity {
     private ImageView npArt;
     private TextView npTitle, npArtist, npSource, upWhen, upTitle;
     private boolean npVisible;
+    private LinearLayout dots;
+    private int rotIdx;
+    private final Runnable rotTick = new Runnable() {
+        @Override
+        public void run() {
+            handler.postDelayed(this, 7000);
+            if (!prefs.getBoolean("stackCards", false) && !npVisible && !dreaming) {
+                final View side = (View) wxCard.getParent();
+                side.animate().alpha(0f).setDuration(260).withEndAction(new Runnable() {
+                    @Override
+                    public void run() {
+                        rotIdx++;
+                        applyCardPrefs();
+                        side.animate().alpha(1f).setDuration(380).start();
+                    }
+                }).start();
+            }
+        }
+    };
     private List<Cal.Event> calEvents;
     private FrameLayout todayPanel;
     private LinearLayout todayBody;
@@ -256,6 +275,8 @@ public class MainActivity extends Activity {
         wake();
         handler.removeCallbacks(mediaTick);
         mediaTick.run();
+        handler.removeCallbacks(rotTick);
+        handler.postDelayed(rotTick, 7000);
     }
 
     @Override
@@ -268,6 +289,7 @@ public class MainActivity extends Activity {
         handler.removeCallbacks(headlineTick);
         handler.removeCallbacks(idleRunnable);
         handler.removeCallbacks(mediaTick);
+        handler.removeCallbacks(rotTick);
         if (fx != null) fx.setRunning(false);
     }
 
@@ -501,13 +523,13 @@ public class MainActivity extends Activity {
             }
         });
         npArt.setClipToOutline(true);
-        np.addView(npArt, new LinearLayout.LayoutParams(px(54), px(54)));
+        np.addView(npArt, new LinearLayout.LayoutParams(px(46), px(46)));
         LinearLayout npText = new LinearLayout(this);
         npText.setOrientation(LinearLayout.VERTICAL);
         npSource = text(11, 0xCCFFFFFF, tfSemi);
         npSource.setLetterSpacing(0.12f);
         npText.addView(npSource);
-        npTitle = text(16, 0xFFFFFFFF, tfMedium);
+        npTitle = text(15, 0xFFFFFFFF, tfMedium);
         npTitle.setSingleLine(true);
         npTitle.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams ntl = new LinearLayout.LayoutParams(-1, -2);
@@ -522,7 +544,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams ntxl = new LinearLayout.LayoutParams(0, -2, 1f);
         ntxl.leftMargin = px(14);
         np.addView(npText, ntxl);
-        side.addView(np, new LinearLayout.LayoutParams(px(300), -2));
+        side.addView(np, new LinearLayout.LayoutParams(px(CARD_W), -2));
         npCard = np;
 
         LinearLayout wx = glass();
@@ -533,7 +555,7 @@ public class MainActivity extends Activity {
         LinearLayout wxLine = new LinearLayout(this);
         wxLine.setOrientation(LinearLayout.HORIZONTAL);
         wxLine.setGravity(Gravity.BOTTOM);
-        wxTemp = text(40, 0xFFFFFFFF, tfLight);
+        wxTemp = text(32, 0xFFFFFFFF, tfLight);
         wxTemp.setText("--°");
         wxLine.addView(wxTemp);
         LinearLayout wxRight = new LinearLayout(this);
@@ -551,7 +573,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams wll = new LinearLayout.LayoutParams(-2, -2);
         wll.topMargin = px(4);
         wx.addView(wxLine, wll);
-        side.addView(wx, new LinearLayout.LayoutParams(px(300), -2));
+        side.addView(wx, new LinearLayout.LayoutParams(px(CARD_W), -2));
         wxCard = wx;
 
         LinearLayout surf = glass();
@@ -559,7 +581,7 @@ public class MainActivity extends Activity {
         surfLabel.setLetterSpacing(0.12f);
         surfLabel.setText("BONDI SURF");
         surf.addView(surfLabel);
-        surfMain = text(22, 0xFFFFFFFF, tfLight);
+        surfMain = text(18, 0xFFFFFFFF, tfLight);
         surfMain.setText("--");
         LinearLayout.LayoutParams sml = new LinearLayout.LayoutParams(-2, -2);
         sml.topMargin = px(6);
@@ -568,7 +590,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams ssl2 = new LinearLayout.LayoutParams(-2, -2);
         ssl2.topMargin = px(4);
         surf.addView(surfSub, ssl2);
-        LinearLayout.LayoutParams sfl = new LinearLayout.LayoutParams(px(300), -2);
+        LinearLayout.LayoutParams sfl = new LinearLayout.LayoutParams(px(CARD_W), -2);
         sfl.topMargin = px(12);
         side.addView(surf, sfl);
         surfCard = surf;
@@ -578,7 +600,7 @@ public class MainActivity extends Activity {
         upLabel.setLetterSpacing(0.12f);
         upLabel.setText("UP NEXT");
         up.addView(upLabel);
-        upTitle = text(16, 0xFFFFFFFF, tfMedium);
+        upTitle = text(15, 0xFFFFFFFF, tfMedium);
         upTitle.setSingleLine(true);
         upTitle.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams utl = new LinearLayout.LayoutParams(-1, -2);
@@ -588,7 +610,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams uwl = new LinearLayout.LayoutParams(-2, -2);
         uwl.topMargin = px(3);
         up.addView(upWhen, uwl);
-        side.addView(up, new LinearLayout.LayoutParams(px(300), -2));
+        side.addView(up, new LinearLayout.LayoutParams(px(CARD_W), -2));
         upCard = up;
 
         LinearLayout news = glass();
@@ -596,7 +618,7 @@ public class MainActivity extends Activity {
         newsLabel.setLetterSpacing(0.12f);
         newsLabel.setText("ABC NEWS · JUST IN");
         news.addView(newsLabel);
-        headline = text(16, 0xFFFFFFFF, tfMedium);
+        headline = text(14, 0xFFFFFFFF, tfMedium);
         headline.setMaxLines(2);
         headline.setEllipsize(TextUtils.TruncateAt.END);
         headline.setLineSpacing(px(2), 1f);
@@ -604,10 +626,16 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams hll = new LinearLayout.LayoutParams(-1, -2);
         hll.topMargin = px(8);
         news.addView(headline, hll);
-        LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(px(300), -2);
+        LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(px(CARD_W), -2);
         nlp.topMargin = px(12);
         side.addView(news, nlp);
         newsCard = news;
+        dots = new LinearLayout(this);
+        dots.setOrientation(LinearLayout.HORIZONTAL);
+        dots.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams dtl = new LinearLayout.LayoutParams(px(CARD_W), -2);
+        dtl.topMargin = px(8);
+        side.addView(dots, dtl);
         applyCardPrefs();
 
         FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
@@ -714,14 +742,16 @@ public class MainActivity extends Activity {
     }
 
     /** Dark translucent rounded card with a faint edge — a stand-in for tvOS frosted glass. */
+    private static final int CARD_W = 250;
+
     private LinearLayout glass() {
         LinearLayout g = new LinearLayout(this);
         g.setOrientation(LinearLayout.VERTICAL);
-        g.setPadding(px(18), px(14), px(18), px(16));
+        g.setPadding(px(15), px(11), px(15), px(12));
         GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0x59202228, 0x73101114});
-        bg.setCornerRadius(px(18));
-        bg.setStroke(Math.max(1, px(1)), 0x26FFFFFF);
+                new int[]{0x2E1A1C22, 0x420C0D10});
+        bg.setCornerRadius(px(16));
+        bg.setStroke(Math.max(1, px(1)), 0x14FFFFFF);
         g.setBackground(bg);
         return g;
     }
@@ -1527,15 +1557,46 @@ public class MainActivity extends Activity {
 
     private void applyCardPrefs() {
         boolean hasUp = upTitle.getText().length() > 0;
-        // Priority if space is short: playing > weather > up next > surf > news (max three cards)
-        View[] priority = {npCard, wxCard, upCard, surfCard, newsCard};
-        boolean[] want = {npVisible, !prefs.getBoolean("hideWeather", false), hasUp,
-                !prefs.getBoolean("hideSurf", false), !prefs.getBoolean("hideNews", false)};
-        int shown = 0;
-        for (int i = 0; i < priority.length; i++) {
-            boolean on = want[i] && shown < 3;
-            if (on) shown++;
-            priority[i].setVisibility(on ? View.VISIBLE : View.GONE);
+        boolean stacked = prefs.getBoolean("stackCards", false);
+        if (stacked) {
+            // Priority if space is short: playing > weather > up next > surf > news (max three cards)
+            View[] priority = {npCard, wxCard, upCard, surfCard, newsCard};
+            boolean[] want = {npVisible, !prefs.getBoolean("hideWeather", false), hasUp,
+                    !prefs.getBoolean("hideSurf", false), !prefs.getBoolean("hideNews", false)};
+            int shown = 0;
+            for (int i = 0; i < priority.length; i++) {
+                boolean on = want[i] && shown < 3;
+                if (on) shown++;
+                priority[i].setVisibility(on ? View.VISIBLE : View.GONE);
+            }
+            dots.setVisibility(View.GONE);
+        } else {
+            // One card at a time, rotating: weather -> surf -> up next -> news. Now Playing takes over.
+            List<View> cycle = new ArrayList<>();
+            if (!prefs.getBoolean("hideWeather", false)) cycle.add(wxCard);
+            if (!prefs.getBoolean("hideSurf", false)) cycle.add(surfCard);
+            if (hasUp) cycle.add(upCard);
+            if (!prefs.getBoolean("hideNews", false)) cycle.add(newsCard);
+            View current = npVisible ? npCard : cycle.isEmpty() ? null : cycle.get(rotIdx % cycle.size());
+            for (View v : new View[]{npCard, wxCard, surfCard, upCard, newsCard}) {
+                v.setVisibility(v == current ? View.VISIBLE : View.GONE);
+            }
+            dots.removeAllViews();
+            if (!npVisible && cycle.size() > 1) {
+                for (int i = 0; i < cycle.size(); i++) {
+                    View d = new View(this);
+                    GradientDrawable dg = new GradientDrawable();
+                    dg.setShape(GradientDrawable.OVAL);
+                    dg.setColor(cycle.get(i) == current ? 0xE6FFFFFF : 0x4DFFFFFF);
+                    d.setBackground(dg);
+                    LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(px(5), px(5));
+                    dl.leftMargin = dl.rightMargin = px(3);
+                    dots.addView(d, dl);
+                }
+                dots.setVisibility(View.VISIBLE);
+            } else {
+                dots.setVisibility(View.GONE);
+            }
         }
         boolean first = true;
         for (View v : new View[]{npCard, wxCard, surfCard, upCard, newsCard}) {
@@ -2237,6 +2298,12 @@ public class MainActivity extends Activity {
                 rebuildRows();
             });
         }
+        final boolean stackedNow = prefs.getBoolean("stackCards", false);
+        labels.add(stackedNow ? "Widgets: rotate one at a time" : "Widgets: show several at once");
+        acts.add(() -> {
+            prefs.edit().putBoolean("stackCards", !stackedNow).apply();
+            applyCardPrefs();
+        });
         final boolean surfHidden = prefs.getBoolean("hideSurf", false);
         labels.add(surfHidden ? "Show surf report" : "Hide surf report");
         acts.add(() -> toggle("hideSurf"));
