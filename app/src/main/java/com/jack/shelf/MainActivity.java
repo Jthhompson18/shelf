@@ -107,6 +107,8 @@ public class MainActivity extends Activity {
     private final List<String> headlines = new ArrayList<>();
     private int headlineIdx = -1;
     private String lastFocused;
+    String updateTag;
+    private long lastUpdateCheck;
 
     private final Runnable headlineTick = new Runnable() {
         @Override
@@ -125,6 +127,13 @@ public class MainActivity extends Activity {
         }
     };
 
+    private final Runnable weatherRetry = new Runnable() {
+        @Override
+        public void run() {
+            refreshGlance();
+        }
+    };
+
     private final Runnable glanceTick = new Runnable() {
         @Override
         public void run() {
@@ -139,8 +148,8 @@ public class MainActivity extends Activity {
         public void run() {
             long now = System.currentTimeMillis();
             boolean h24 = DateFormat.is24HourFormat(MainActivity.this);
-            clock.setText(DateFormat.format(h24 ? "HH:mm" : "h:mm", now));
-            date.setText(DateFormat.format("EEEE d MMMM", now));
+            clock.setText(fmt(h24 ? "HH:mm" : "h:mm", now));
+            date.setText(fmt("EEEE d MMMM", now));
             handler.postDelayed(this, 5000);
         }
     };
@@ -210,6 +219,7 @@ public class MainActivity extends Activity {
         handler.postDelayed(wallTick, Math.max(1000, WALLPAPER_EVERY_MS - since));
         handler.removeCallbacks(glanceTick);
         glanceTick.run();
+        checkForUpdate(false);
         if (fx != null) fx.setRunning(true);
     }
 
@@ -219,6 +229,7 @@ public class MainActivity extends Activity {
         handler.removeCallbacks(clockTick);
         handler.removeCallbacks(wallTick);
         handler.removeCallbacks(glanceTick);
+        handler.removeCallbacks(weatherRetry);
         handler.removeCallbacks(headlineTick);
         if (fx != null) fx.setRunning(false);
     }
@@ -535,9 +546,21 @@ public class MainActivity extends Activity {
         return g;
     }
 
+    static final java.util.TimeZone SYDNEY = java.util.TimeZone.getTimeZone("Australia/Sydney");
+
+    private static String fmt(String pattern, long t) {
+        java.text.SimpleDateFormat f = new java.text.SimpleDateFormat(pattern, Locale.ENGLISH);
+        f.setTimeZone(SYDNEY);
+        return f.format(new java.util.Date(t));
+    }
+
+    static int sydneyHour() {
+        return java.util.Calendar.getInstance(SYDNEY).get(java.util.Calendar.HOUR_OF_DAY);
+    }
+
     private String moodFor(Glance.Weather w) {
         if (w == null) {
-            int h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
+            int h = sydneyHour();
             return (h >= 19 || h < 6) ? "night" : "day";
         }
         if (!w.isDay) return "night";
@@ -567,10 +590,10 @@ public class MainActivity extends Activity {
 
     private void showWelcome() {
         if (splash == null) return;
-        int hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
+        int hour = sydneyHour();
         splashHello.setText(greetingFor(hour));
         splashSub.setText(lastWx != null ? weatherLine(lastWx)
-                : DateFormat.format("EEEE d MMMM", System.currentTimeMillis()));
+                : fmt("EEEE d MMMM", System.currentTimeMillis()));
         splash.animate().cancel();
         splash.setVisibility(View.VISIBLE);
         splash.setAlpha(0f);
@@ -610,11 +633,32 @@ public class MainActivity extends Activity {
         return "Hey " + NAME + ", it's late";
     }
 
+    void checkForUpdate(final boolean manual) {
+        long now = System.currentTimeMillis();
+        if (!manual && now - lastUpdateCheck < 6 * 3600 * 1000L) return;
+        lastUpdateCheck = now;
+        new Thread(() -> {
+            final String tag = Updater.newerTag(this);
+            runOnUiThread(() -> {
+                boolean changed = (tag == null) != (updateTag == null);
+                updateTag = tag;
+                if (changed) rebuildRows();
+                if (manual) Toast.makeText(this, tag == null ? "Shelf is up to date"
+                        : "Update ready \u2014 select the Update tile", Toast.LENGTH_LONG).show();
+            });
+        }).start();
+    }
+
     private void refreshGlance() {
         new Thread(() -> {
             final Glance.Weather w = Glance.weather();
             final List<String> h = Glance.headlines();
             runOnUiThread(() -> {
+                if (w == null) {
+                    handler.removeCallbacks(weatherRetry);
+                    handler.postDelayed(weatherRetry, 60 * 1000L);
+                    if (lastWx == null) wxCond.setText("Updating\u2026");
+                }
                 if (w != null) {
                     lastWx = w;
                     applyWeather(w);
@@ -714,8 +758,38 @@ public class MainActivity extends Activity {
      * Pins well-known streaming apps the first time each one is seen. Anything
      * the user later removes stays removed.
      */
+    /** Pre-installed clutter that starts hidden from the bottom row (can be restored). */
+    private static final String[] DEFAULT_HIDE = {
+            "youcine", "unitv", "tvmarket", "emotn", "filebrowser", "file browser", "gallery",
+            "musicplayer", "music player", "movieplayer", "movie player", "miracast", "settings",
+            "airscreen", "aptoide", "downloader"
+    };
+
+    private void autoHide() {
+        Set<String> seen = new HashSet<>(prefs.getStringSet("seenHide", Collections.<String>emptySet()));
+        Set<String> hid = hidden();
+        boolean changed = false;
+        for (App a : apps.values()) {
+            if (seen.contains(a.pkg)) continue;
+            seen.add(a.pkg);
+            changed = true;
+            String l = a.label.toLowerCase(Locale.ROOT);
+            for (String w : DEFAULT_HIDE) {
+                if (l.contains(w)) {
+                    hid.add(a.pkg);
+                    break;
+                }
+            }
+        }
+        if (changed) {
+            saveHidden(hid);
+            prefs.edit().putStringSet("seenHide", seen).apply();
+        }
+    }
+
     private void autoPin() {
         if (apps.isEmpty()) return;
+        autoHide();
         Set<String> seen = new HashSet<>(prefs.getStringSet("seen", Collections.<String>emptySet()));
         List<String> fav = favs();
         boolean changed = false;
@@ -838,6 +912,7 @@ public class MainActivity extends Activity {
         favRow.removeAllViews();
         allRow.removeAllViews();
 
+        if (updateTag != null) favRow.addView(updateTile());
         for (String p : favs()) {
             App a = apps.get(p);
             if (a != null) favRow.addView(appTile(a, true));
@@ -845,11 +920,13 @@ public class MainActivity extends Activity {
         if (!installed(APPLE_TV_PKG) && !prefs.getBoolean("noAtvSuggest", false)) {
             favRow.addView(getAppleTvTile());
         }
+        if (!prefs.getBoolean("noXbox", false)) favRow.addView(xboxTile());
         favRow.addView(settingsTile());
 
         Set<String> hid = hidden();
+        Set<String> pinned = new HashSet<>(favs());
         for (App a : sortedApps()) {
-            if (!hid.contains(a.pkg)) allRow.addView(appTile(a, false));
+            if (!hid.contains(a.pkg) && !pinned.contains(a.pkg)) allRow.addView(appTile(a, false));
         }
 
         View target = keep != null ? findTile(keep) : null;
@@ -1010,6 +1087,106 @@ public class MainActivity extends Activity {
         return c.root;
     }
 
+    // ---------------------------------------------------------------- Xbox (HDMI input)
+
+    private View xboxTile() {
+        View root = textTile("fav:__xbox__", "Xbox", "Xbox", 0xFF2FA343, 0xFF0B5A1C);
+        View tile = root.findViewWithTag("tile");
+        tile.setOnClickListener(v -> openXbox());
+        tile.setOnLongClickListener(v -> {
+            List<String> l = new ArrayList<>();
+            List<Runnable> r = new ArrayList<>();
+            l.add("Choose which HDMI input the Xbox is on");
+            r.add(this::chooseInput);
+            l.add("Remove Xbox tile");
+            r.add(() -> {
+                prefs.edit().putBoolean("noXbox", true).apply();
+                lastFocused = null;
+                rebuildRows();
+            });
+            menu("Xbox", l, r);
+            return true;
+        });
+        return root;
+    }
+
+    private List<android.media.tv.TvInputInfo> hdmiInputs() {
+        List<android.media.tv.TvInputInfo> out = new ArrayList<>();
+        try {
+            android.media.tv.TvInputManager tim =
+                    (android.media.tv.TvInputManager) getSystemService(Context.TV_INPUT_SERVICE);
+            if (tim == null) return out;
+            for (android.media.tv.TvInputInfo i : tim.getTvInputList()) {
+                if (i.getType() == android.media.tv.TvInputInfo.TYPE_HDMI) out.add(i);
+            }
+        } catch (Throwable ignored) {
+        }
+        return out;
+    }
+
+    private void chooseInput() {
+        final List<android.media.tv.TvInputInfo> ins = hdmiInputs();
+        if (ins.isEmpty()) {
+            Toast.makeText(this, "No HDMI inputs found on this projector", Toast.LENGTH_LONG).show();
+            return;
+        }
+        List<String> l = new ArrayList<>();
+        List<Runnable> r = new ArrayList<>();
+        for (final android.media.tv.TvInputInfo i : ins) {
+            CharSequence name = i.loadLabel(this);
+            l.add(name == null || name.length() == 0 ? i.getId() : name.toString());
+            r.add(() -> {
+                prefs.edit().putString("xboxInput", i.getId()).apply();
+                openXbox();
+            });
+        }
+        menu("Xbox is plugged into\u2026", l, r);
+    }
+
+    private void openXbox() {
+        String id = prefs.getString("xboxInput", null);
+        List<android.media.tv.TvInputInfo> ins = hdmiInputs();
+        if (id == null && ins.size() == 1) id = ins.get(0).getId();
+        if (id == null && ins.size() > 1) {
+            // Xbox is on HDMI 1: pick the input labelled 1, otherwise the first HDMI port.
+            id = ins.get(0).getId();
+            for (android.media.tv.TvInputInfo i : ins) {
+                CharSequence n = i.loadLabel(this);
+                String t = n == null ? "" : n.toString().toLowerCase(Locale.ROOT).replace(" ", "");
+                if (t.equals("hdmi1") || t.endsWith("1")) {
+                    id = i.getId();
+                    break;
+                }
+            }
+        }
+        if (id != null) {
+            try {
+                Intent i = new Intent(Intent.ACTION_VIEW,
+                        android.media.tv.TvContract.buildChannelUriForPassthroughInput(id));
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+                return;
+            } catch (Exception ignored) {
+            }
+        }
+        // Fall back to the projector's own input/source app
+        for (App a : sortedApps()) {
+            String n = a.label.toLowerCase(Locale.ROOT);
+            if (n.contains("hdmi") || n.contains("source") || n.contains("input") || n.contains("signal")) {
+                launch(a);
+                return;
+            }
+        }
+        Toast.makeText(this, "Couldn't switch input here \u2014 use the Source/Input button on the remote",
+                Toast.LENGTH_LONG).show();
+    }
+
+    private View updateTile() {
+        View root = textTile("fav:__update__", "Install update", "Update", 0xFF2F7CF6, 0xFF1550C8);
+        root.findViewWithTag("tile").setOnClickListener(v -> Updater.install(this));
+        return root;
+    }
+
     private View settingsTile() {
         View root = textTile("fav:" + SETTINGS_TAG, "Settings", "Settings", 0xFF5A5D66, 0xFF2A2C31);
         View tile = root.findViewWithTag("tile");
@@ -1154,6 +1331,8 @@ public class MainActivity extends Activity {
             labels.add("Next background");
             acts.add(() -> nextWallpaper(true));
         }
+        labels.add("Check for updates");
+        acts.add(() -> checkForUpdate(true));
         labels.add("Show hidden apps");
         acts.add(() -> {
             saveHidden(new HashSet<String>());
@@ -1161,7 +1340,7 @@ public class MainActivity extends Activity {
         });
         labels.add("Reset top row");
         acts.add(() -> {
-            prefs.edit().putString("fav", "").remove("seen").remove("noAtvSuggest").apply();
+            prefs.edit().putString("fav", "").remove("seen").remove("noAtvSuggest").remove("noXbox").apply();
             lastFocused = null;
             reload();
         });

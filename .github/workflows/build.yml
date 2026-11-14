@@ -41,10 +41,21 @@ jobs:
           fetch night_03 photo-1743364892984-1b7e34054a6b  # Stars over a calm lake
           ls -la app/src/main/assets/wallpapers
       - name: Build
-        run: gradle assembleDebug --no-daemon
+        env:
+          KS_B64: ${{ secrets.KS_B64 }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > app/release.jks
+            gradle assembleRelease --no-daemon
+            cp app/build/outputs/apk/release/app-release.apk shelf.apk
+          else
+            echo "No KS_B64 secret: building with a temporary key"
+            gradle assembleDebug --no-daemon
+            cp app/build/outputs/apk/debug/app-debug.apk shelf.apk
+          fi
+          rm -f app/release.jks
       - name: Publish release
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk shelf.apk
           gh release create "v${{ github.run_number }}" shelf.apk --title "Shelf build ${{ github.run_number }}" --notes "Install on the projector with Downloader." --latest
         env:
           GH_TOKEN: ${{ github.token }}

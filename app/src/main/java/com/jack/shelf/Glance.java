@@ -34,6 +34,37 @@ final class Glance {
     }
 
     static Weather weather() {
+        Weather w = openMeteo();
+        return w != null ? w : wttr();
+    }
+
+    /** Backup source if Open-Meteo can't be reached. */
+    private static Weather wttr() {
+        try {
+            JSONObject o = new JSONObject(get("https://wttr.in/Bondi,Australia?format=j1"));
+            JSONObject cur = o.getJSONArray("current_condition").getJSONObject(0);
+            JSONObject day = o.getJSONArray("weather").getJSONObject(0);
+            Weather w = new Weather();
+            w.temp = Integer.parseInt(cur.getString("temp_C"));
+            w.hi = Integer.parseInt(day.getString("maxtempC"));
+            w.lo = Integer.parseInt(day.getString("mintempC"));
+            String d = cur.getJSONArray("weatherDesc").getJSONObject(0).getString("value").trim();
+            String l = d.toLowerCase();
+            w.code = l.contains("thunder") ? 95 : l.contains("heavy rain") ? 63
+                    : (l.contains("rain") || l.contains("shower")) ? 61 : l.contains("drizzle") ? 51
+                    : (l.contains("fog") || l.contains("mist")) ? 45
+                    : (l.contains("overcast") || l.contains("cloudy") && !l.contains("partly")) ? 3
+                    : l.contains("partly") ? 2 : 0;
+            w.condition = d.isEmpty() ? describe(w.code) : Character.toUpperCase(d.charAt(0)) + d.substring(1).toLowerCase();
+            int h = MainActivity.sydneyHour();
+            w.isDay = h >= 6 && h < 20;
+            return w;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private static Weather openMeteo() {
         try {
             JSONObject o = new JSONObject(get(WEATHER_URL));
             JSONObject cur = o.getJSONObject("current");
@@ -82,7 +113,8 @@ final class Glance {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setConnectTimeout(8000);
         c.setReadTimeout(8000);
-        c.setRequestProperty("User-Agent", "Shelf/1.0 (Android TV)");
+        c.setRequestProperty("User-Agent", "Shelf/1.0 (Android TV; github.com/Jthhompson18/shelf)");
+        c.setRequestProperty("Accept", "*/*");
         try (InputStream in = c.getInputStream()) {
             ByteArrayOutputStream bo = new ByteArrayOutputStream();
             byte[] buf = new byte[8192];

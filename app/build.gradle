@@ -15,9 +15,26 @@ android {
     }
 
 
+    // The keystore itself is never committed: CI writes it from the KS_B64 repository secret.
+    def ks = file('release.jks')
+    signingConfigs {
+        release {
+            if (ks.exists()) {
+                storeFile ks
+                storePassword 'shelf-signing'
+                keyAlias 'shelf'
+                keyPassword 'shelf-signing'
+            }
+        }
+    }
+
     buildTypes {
         debug {
             minifyEnabled false
+        }
+        release {
+            minifyEnabled false
+            if (ks.exists()) signingConfig signingConfigs.release
         }
     }
 
