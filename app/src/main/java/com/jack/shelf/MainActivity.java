@@ -70,7 +70,7 @@ public class MainActivity extends Activity {
     /** Apps that are pinned to the top row automatically when they're installed (in this order). */
     private static final String[] DEFAULT_FAVS = {
             "apple tv", "netflix", "youtube", "prime video", "paramount", "apple music", "disney",
-            "stan", "binge", "kayo", "spotify", "abc iview", "sbs on demand", "plex"
+            "stan", "binge", "kayo", "spotify", "soundcloud", "abc iview", "sbs on demand", "plex"
     };
 
     private static final long WALLPAPER_EVERY_MS = 10 * 60 * 1000L;
@@ -93,7 +93,23 @@ public class MainActivity extends Activity {
     private LinearLayout appsGrid;
     private android.widget.ScrollView appsScroll;
     private boolean appsOpen;
-    private View wxCard, newsCard, surfCard;
+    private View wxCard, newsCard, surfCard, npCard, upCard;
+    private ImageView npArt;
+    private TextView npTitle, npArtist, npSource, upWhen, upTitle;
+    private boolean npVisible;
+    private List<Cal.Event> calEvents;
+    private FrameLayout todayPanel;
+    private LinearLayout todayBody;
+    private boolean todayOpen;
+    private final LinkSetup linkSetup = new LinkSetup();
+    private final Runnable mediaTick = new Runnable() {
+        @Override
+        public void run() {
+            updateNowPlaying();
+            updateUpNext();
+            handler.postDelayed(this, 3000);
+        }
+    };
     private TextView surfMain, surfSub;
     private View helloBlock, sideBlock, rowsBlock, bottomShadeView;
     private boolean dreaming;
@@ -238,6 +254,8 @@ public class MainActivity extends Activity {
         checkForUpdate(false);
         if (fx != null) fx.setRunning(true);
         wake();
+        handler.removeCallbacks(mediaTick);
+        mediaTick.run();
     }
 
     @Override
@@ -249,6 +267,7 @@ public class MainActivity extends Activity {
         handler.removeCallbacks(weatherRetry);
         handler.removeCallbacks(headlineTick);
         handler.removeCallbacks(idleRunnable);
+        handler.removeCallbacks(mediaTick);
         if (fx != null) fx.setRunning(false);
     }
 
@@ -266,6 +285,7 @@ public class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         if (appsOpen) closeApps(false);
+        if (todayOpen) closeToday();
         goToStart();
     }
 
@@ -465,6 +485,43 @@ public class MainActivity extends Activity {
         LinearLayout side = new LinearLayout(this);
         side.setOrientation(LinearLayout.VERTICAL);
 
+        LinearLayout np = glass();
+        np.setOrientation(LinearLayout.HORIZONTAL);
+        np.setGravity(Gravity.CENTER_VERTICAL);
+        npArt = new ImageView(this);
+        npArt.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        final float artR = px(8);
+        npArt.setOutlineProvider(new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View v, Outline o) {
+                o.setRoundRect(0, 0, v.getWidth(), v.getHeight(), artR);
+            }
+        });
+        npArt.setClipToOutline(true);
+        np.addView(npArt, new LinearLayout.LayoutParams(px(54), px(54)));
+        LinearLayout npText = new LinearLayout(this);
+        npText.setOrientation(LinearLayout.VERTICAL);
+        npSource = text(11, 0xCCFFFFFF, tfSemi);
+        npSource.setLetterSpacing(0.12f);
+        npText.addView(npSource);
+        npTitle = text(16, 0xFFFFFFFF, tfMedium);
+        npTitle.setSingleLine(true);
+        npTitle.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams ntl = new LinearLayout.LayoutParams(-1, -2);
+        ntl.topMargin = px(4);
+        npText.addView(npTitle, ntl);
+        npArtist = text(13, 0xBFFFFFFF, tfRegular);
+        npArtist.setSingleLine(true);
+        npArtist.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams nal = new LinearLayout.LayoutParams(-1, -2);
+        nal.topMargin = px(2);
+        npText.addView(npArtist, nal);
+        LinearLayout.LayoutParams ntxl = new LinearLayout.LayoutParams(0, -2, 1f);
+        ntxl.leftMargin = px(14);
+        np.addView(npText, ntxl);
+        side.addView(np, new LinearLayout.LayoutParams(px(300), -2));
+        npCard = np;
+
         LinearLayout wx = glass();
         wxPlace = text(12, 0xCCFFFFFF, tfSemi);
         wxPlace.setLetterSpacing(0.12f);
@@ -512,6 +569,24 @@ public class MainActivity extends Activity {
         sfl.topMargin = px(12);
         side.addView(surf, sfl);
         surfCard = surf;
+
+        LinearLayout up = glass();
+        TextView upLabel = text(12, 0xCCFFFFFF, tfSemi);
+        upLabel.setLetterSpacing(0.12f);
+        upLabel.setText("UP NEXT");
+        up.addView(upLabel);
+        upTitle = text(16, 0xFFFFFFFF, tfMedium);
+        upTitle.setSingleLine(true);
+        upTitle.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams utl = new LinearLayout.LayoutParams(-1, -2);
+        utl.topMargin = px(7);
+        up.addView(upTitle, utl);
+        upWhen = text(13, 0xBFFFFFFF, tfRegular);
+        LinearLayout.LayoutParams uwl = new LinearLayout.LayoutParams(-2, -2);
+        uwl.topMargin = px(3);
+        up.addView(upWhen, uwl);
+        side.addView(up, new LinearLayout.LayoutParams(px(300), -2));
+        upCard = up;
 
         LinearLayout news = glass();
         TextView newsLabel = text(12, 0xCCFFFFFF, tfSemi);
@@ -650,7 +725,7 @@ public class MainActivity extends Activity {
 
     static final java.util.TimeZone SYDNEY = java.util.TimeZone.getTimeZone("Australia/Sydney");
 
-    private static String fmt(String pattern, long t) {
+    static String fmt(String pattern, long t) {
         java.text.SimpleDateFormat f = new java.text.SimpleDateFormat(pattern, Locale.ENGLISH);
         f.setTimeZone(SYDNEY);
         return f.format(new java.util.Date(t));
@@ -728,6 +803,15 @@ public class MainActivity extends Activity {
             if (e.getAction() == KeyEvent.ACTION_UP) wake();
             return true;
         }
+        if (todayOpen) {
+            int k = e.getKeyCode();
+            if (e.getAction() == KeyEvent.ACTION_UP && (k == KeyEvent.KEYCODE_BACK
+                    || k == KeyEvent.KEYCODE_DPAD_CENTER || k == KeyEvent.KEYCODE_ENTER)) {
+                closeToday();
+            }
+            resetIdle();
+            return true;
+        }
         if (e.getAction() == KeyEvent.ACTION_DOWN) resetIdle();
         if (splash != null && splash.getVisibility() == View.VISIBLE && splash.getAlpha() > 0.5f) {
             if (e.getAction() == KeyEvent.ACTION_UP) dismissWelcome();
@@ -763,6 +847,7 @@ public class MainActivity extends Activity {
             final Glance.Weather w = Glance.weather();
             final List<String> h = Glance.headlines();
             final Glance.Surf sf = Glance.surf();
+            final List<Cal.Event> ev = Cal.upcoming(prefs.getString("icsUrl", null));
             runOnUiThread(() -> {
                 if (w == null) {
                     handler.removeCallbacks(weatherRetry);
@@ -777,6 +862,10 @@ public class MainActivity extends Activity {
                     wxRange.setText("H " + w.hi + "°   L " + w.lo + "°");
                 }
                 if (sf != null) showSurf(sf, w != null ? w : lastWx);
+                if (ev != null) {
+                    calEvents = ev;
+                    updateUpNext();
+                }
                 if (!h.isEmpty()) {
                     headlines.clear();
                     headlines.addAll(h);
@@ -1031,6 +1120,8 @@ public class MainActivity extends Activity {
         if (!installed(APPLE_TV_PKG) && !prefs.getBoolean("noAtvSuggest", false)) {
             favRow.addView(getAppleTvTile());
         }
+        favRow.addView(todayTile());
+        if (!prefs.getBoolean("noAirplay", false)) favRow.addView(airplayTile());
         if (!prefs.getBoolean("noXbox", false)) favRow.addView(xboxTile());
         favRow.addView(sleepTile());
         favRow.addView(appsTile());
@@ -1432,16 +1523,397 @@ public class MainActivity extends Activity {
     // ---------------------------------------------------------------- weather / news switches
 
     private void applyCardPrefs() {
-        wxCard.setVisibility(prefs.getBoolean("hideWeather", false) ? View.GONE : View.VISIBLE);
-        surfCard.setVisibility(prefs.getBoolean("hideSurf", false) ? View.GONE : View.VISIBLE);
-        newsCard.setVisibility(prefs.getBoolean("hideNews", false) ? View.GONE : View.VISIBLE);
+        boolean hasUp = upTitle.getText().length() > 0;
+        // Priority if space is short: playing > weather > up next > surf > news (max three cards)
+        View[] priority = {npCard, wxCard, upCard, surfCard, newsCard};
+        boolean[] want = {npVisible, !prefs.getBoolean("hideWeather", false), hasUp,
+                !prefs.getBoolean("hideSurf", false), !prefs.getBoolean("hideNews", false)};
+        int shown = 0;
+        for (int i = 0; i < priority.length; i++) {
+            boolean on = want[i] && shown < 3;
+            if (on) shown++;
+            priority[i].setVisibility(on ? View.VISIBLE : View.GONE);
+        }
         boolean first = true;
-        for (View v : new View[]{wxCard, surfCard, newsCard}) {
+        for (View v : new View[]{npCard, wxCard, surfCard, upCard, newsCard}) {
             LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) v.getLayoutParams();
             lp.topMargin = (v.getVisibility() == View.VISIBLE && !first) ? px(12) : 0;
             v.setLayoutParams(lp);
             if (v.getVisibility() == View.VISIBLE) first = false;
         }
+    }
+
+    // ---------------------------------------------------------------- now playing
+
+    private void updateNowPlaying() {
+        boolean was = npVisible;
+        npVisible = false;
+        try {
+            android.media.session.MediaSessionManager m = (android.media.session.MediaSessionManager)
+                    getSystemService(Context.MEDIA_SESSION_SERVICE);
+            List<android.media.session.MediaController> list =
+                    m.getActiveSessions(new ComponentName(this, MediaListener.class));
+            for (android.media.session.MediaController c : list) {
+                android.media.session.PlaybackState st = c.getPlaybackState();
+                android.media.MediaMetadata md = c.getMetadata();
+                if (st == null || md == null || st.getState() != android.media.session.PlaybackState.STATE_PLAYING) {
+                    continue;
+                }
+                String title = md.getString(android.media.MediaMetadata.METADATA_KEY_TITLE);
+                if (title == null || title.isEmpty()) continue;
+                String artist = md.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST);
+                if (artist == null) artist = md.getString(android.media.MediaMetadata.METADATA_KEY_ALBUM_ARTIST);
+                Bitmap art = md.getBitmap(android.media.MediaMetadata.METADATA_KEY_ALBUM_ART);
+                if (art == null) art = md.getBitmap(android.media.MediaMetadata.METADATA_KEY_ART);
+                if (art == null) art = md.getBitmap(android.media.MediaMetadata.METADATA_KEY_DISPLAY_ICON);
+                String src = c.getPackageName();
+                App a = apps.get(src);
+                npSource.setText("NOW PLAYING" + (a != null ? "  \u00B7  " + a.label.toUpperCase(Locale.ROOT) : ""));
+                npTitle.setText(title);
+                npArtist.setText(artist == null ? "" : artist);
+                if (art != null) npArt.setImageBitmap(art);
+                else if (a != null) {
+                    loadVisuals(a);
+                    npArt.setImageDrawable(a.icon);
+                } else npArt.setImageDrawable(null);
+                npVisible = true;
+                break;
+            }
+        } catch (Throwable ignored) {
+            // No permission yet, or this projector doesn't allow it.
+        }
+        if (was != npVisible) applyCardPrefs();
+    }
+
+    // ---------------------------------------------------------------- calendar
+
+    private String timeOf(long t) {
+        return fmt(DateFormat.is24HourFormat(this) ? "HH:mm" : "h:mm a", t).replace("AM", "am").replace("PM", "pm");
+    }
+
+    private void updateUpNext() {
+        String before = upTitle.getText().toString();
+        String title = "", when = "";
+        if (calEvents != null) {
+            long now = System.currentTimeMillis();
+            String today = fmt("yyyyMMdd", now);
+            for (Cal.Event e : calEvents) {
+                if (e.end <= now) continue;
+                boolean isToday = fmt("yyyyMMdd", e.start).equals(today) || e.start < now;
+                if (e.allDay) {
+                    if (!isToday) continue;
+                    title = e.title;
+                    when = "Today \u00B7 all day";
+                } else {
+                    title = e.title;
+                    String day = isToday ? "" : "Tomorrow \u00B7 ";
+                    when = e.start <= now ? "Now \u00B7 until " + timeOf(e.end)
+                            : day + timeOf(e.start) + " \u2013 " + timeOf(e.end);
+                }
+                break;
+            }
+        }
+        upTitle.setText(title);
+        upWhen.setText(when);
+        if (!before.equals(title)) applyCardPrefs();
+    }
+
+    private void calendarSetup() {
+        final String addr = linkSetup.address();
+        if (addr == null) {
+            Toast.makeText(this, "Connect the projector to Wi-Fi first", Toast.LENGTH_LONG).show();
+            return;
+        }
+        final AlertDialog[] box = new AlertDialog[1];
+        linkSetup.start(url -> runOnUiThread(() -> {
+            prefs.edit().putString("icsUrl", url).apply();
+            linkSetup.stop();
+            if (box[0] != null) box[0].dismiss();
+            Toast.makeText(this, "Calendar added", Toast.LENGTH_LONG).show();
+            refreshGlance();
+        }));
+        box[0] = new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle("Add your calendar")
+                .setMessage("On your phone, connected to the same Wi-Fi, open:\n\n" + addr
+                        + "\n\nThen paste your calendar link there. This box closes by itself when it's saved.")
+                .setNegativeButton("Cancel", null)
+                .setOnDismissListener(d -> linkSetup.stop())
+                .show();
+    }
+
+    // ---------------------------------------------------------------- AirPlay (AirScreen)
+
+    private static final String AIRSCREEN = "com.ionitech.airscreen";
+
+    private View airplayTile() {
+        final Cell c = cell(true, "fav:__airplay__", "AirPlay");
+        c.tile.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0xFF3D4452, 0xFF151821}));
+        ImageView g = new ImageView(this);
+        g.setImageDrawable(new CastDrawable(0xFFFFFFFF));
+        int gh = Math.round(((LinearLayout.LayoutParams) c.tile.getLayoutParams()).height * 0.52f);
+        c.tile.addView(g, new FrameLayout.LayoutParams(gh, gh, Gravity.CENTER));
+        wireFocus(c, "fav:__airplay__");
+        c.tile.setOnClickListener(v -> {
+            App a = null;
+            for (App x : apps.values()) {
+                if (x.pkg.equals(AIRSCREEN) || Cal.lower(x.label).contains("airscreen")) {
+                    a = x;
+                    break;
+                }
+            }
+            if (a != null) launch(a);
+            else {
+                Toast.makeText(this, "Install AirScreen to AirPlay from your iPhone", Toast.LENGTH_LONG).show();
+                openStore(AIRSCREEN);
+            }
+        });
+        c.tile.setOnLongClickListener(v -> {
+            List<String> l = new ArrayList<>();
+            List<Runnable> r = new ArrayList<>();
+            l.add("Remove AirPlay tile");
+            r.add(() -> {
+                prefs.edit().putBoolean("noAirplay", true).apply();
+                lastFocused = null;
+                rebuildRows();
+            });
+            menu("AirPlay", l, r);
+            return true;
+        });
+        return c.root;
+    }
+
+    // ---------------------------------------------------------------- Today screen
+
+    private View todayTile() {
+        final Cell c = cell(true, "fav:__today__", "Today");
+        c.tile.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                new int[]{0xFF3A6EA5, 0xFF143154}));
+        LinearLayout v = new LinearLayout(this);
+        v.setOrientation(LinearLayout.VERTICAL);
+        v.setGravity(Gravity.CENTER);
+        TextView dow = text(12, 0xFFFF6B5E, tfSemi);
+        dow.setLetterSpacing(0.14f);
+        dow.setText(fmt("EEEE", System.currentTimeMillis()).toUpperCase(Locale.ENGLISH));
+        v.addView(dow);
+        TextView num = text(38, 0xFFFFFFFF, tfLight);
+        num.setText(fmt("d", System.currentTimeMillis()));
+        v.addView(num);
+        c.tile.addView(v, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
+        wireFocus(c, "fav:__today__");
+        c.tile.setOnClickListener(x -> openToday());
+        return c.root;
+    }
+
+    private void openToday() {
+        if (todayPanel == null) {
+            todayPanel = new FrameLayout(this);
+            todayPanel.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                    new int[]{0xD9050608, 0xF2050608}));
+            todayBody = new LinearLayout(this);
+            todayBody.setOrientation(LinearLayout.VERTICAL);
+            todayBody.setPadding(px(64), px(40), px(64), px(28));
+            todayPanel.addView(todayBody, new FrameLayout.LayoutParams(-1, -1));
+            ((FrameLayout) splash.getParent()).addView(todayPanel, ((FrameLayout) splash.getParent()).indexOfChild(splash),
+                    new FrameLayout.LayoutParams(-1, -1));
+        }
+        todayOpen = true;
+        favScroll.setDescendantFocusability(android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+        todayPanel.setVisibility(View.VISIBLE);
+        todayPanel.setAlpha(0f);
+        todayPanel.animate().alpha(1f).setDuration(250).start();
+        renderToday(null);
+        new Thread(() -> {
+            final Glance.Day d = Glance.day();
+            runOnUiThread(() -> {
+                if (todayOpen) renderToday(d);
+            });
+        }).start();
+    }
+
+    private void closeToday() {
+        todayOpen = false;
+        favScroll.setDescendantFocusability(android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS);
+        if (todayPanel != null) {
+            todayPanel.animate().alpha(0f).setDuration(200).withEndAction(new Runnable() {
+                @Override
+                public void run() {
+                    todayPanel.setVisibility(View.GONE);
+                }
+            }).start();
+        }
+        View t = findTile("fav:__today__");
+        if (t != null) t.requestFocus();
+    }
+
+    private TextView label(String s) {
+        TextView t = text(12, 0xB3FFFFFF, tfSemi);
+        t.setLetterSpacing(0.16f);
+        t.setText(s);
+        return t;
+    }
+
+    private String hm(String hhmm) {
+        if (hhmm == null) return "";
+        if (DateFormat.is24HourFormat(this)) return hhmm;
+        int h = Integer.parseInt(hhmm.substring(0, 2));
+        String m = hhmm.substring(3, 5);
+        return (h % 12 == 0 ? 12 : h % 12) + ":" + m + (h < 12 ? " am" : " pm");
+    }
+
+    private void renderToday(Glance.Day d) {
+        todayBody.removeAllViews();
+        long now = System.currentTimeMillis();
+        todayBody.addView(label("TODAY"));
+        TextView title = text(38, 0xFFFFFFFF, tfLight);
+        title.setText(fmt("EEEE d MMMM", now));
+        LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(-2, -2);
+        tl.topMargin = px(6);
+        todayBody.addView(title, tl);
+
+        LinearLayout cols = new LinearLayout(this);
+        cols.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(-1, 0, 1f);
+        cl.topMargin = px(26);
+        todayBody.addView(cols, cl);
+
+        // Left: weather, hourly, sun, surf
+        LinearLayout left = new LinearLayout(this);
+        left.setOrientation(LinearLayout.VERTICAL);
+        cols.addView(left, new LinearLayout.LayoutParams(0, -1, 1.15f));
+        left.addView(label("BONDI WEATHER"));
+        if (d == null) {
+            TextView w = text(18, 0xCCFFFFFF, tfRegular);
+            w.setText("Loading\u2026");
+            LinearLayout.LayoutParams wl = new LinearLayout.LayoutParams(-2, -2);
+            wl.topMargin = px(10);
+            left.addView(w, wl);
+        } else {
+            LinearLayout big = new LinearLayout(this);
+            big.setOrientation(LinearLayout.HORIZONTAL);
+            big.setGravity(Gravity.BOTTOM);
+            TextView temp = text(56, 0xFFFFFFFF, tfLight);
+            temp.setText((lastWx != null ? lastWx.temp : d.hTemp[0]) + "\u00B0");
+            big.addView(temp);
+            LinearLayout bi = new LinearLayout(this);
+            bi.setOrientation(LinearLayout.VERTICAL);
+            TextView cond = text(18, 0xFFFFFFFF, tfMedium);
+            cond.setText(lastWx != null ? lastWx.condition : Glance.describeCode(d.code));
+            bi.addView(cond);
+            TextView hl = text(14, 0xBFFFFFFF, tfRegular);
+            hl.setText("H " + d.hi + "\u00B0   L " + d.lo + "\u00B0   \u00B7   Rain " + d.rainMax + "%   \u00B7   UV "
+                    + Math.round(d.uv));
+            LinearLayout.LayoutParams hll = new LinearLayout.LayoutParams(-2, -2);
+            hll.topMargin = px(4);
+            bi.addView(hl, hll);
+            LinearLayout.LayoutParams bil = new LinearLayout.LayoutParams(-2, -2);
+            bil.leftMargin = px(18);
+            bil.bottomMargin = px(8);
+            big.addView(bi, bil);
+            LinearLayout.LayoutParams bgl = new LinearLayout.LayoutParams(-2, -2);
+            bgl.topMargin = px(6);
+            left.addView(big, bgl);
+
+            // hourly strip
+            LinearLayout hours = new LinearLayout(this);
+            hours.setOrientation(LinearLayout.HORIZONTAL);
+            for (int i = 0; i < d.n; i++) {
+                LinearLayout h = new LinearLayout(this);
+                h.setOrientation(LinearLayout.VERTICAL);
+                h.setGravity(Gravity.CENTER_HORIZONTAL);
+                TextView ht = text(13, 0xB3FFFFFF, tfMedium);
+                ht.setText(i == 0 ? "Now" : hm(d.hTime[i]).replace(":00", ""));
+                h.addView(ht);
+                TextView hv = text(22, 0xFFFFFFFF, tfLight);
+                hv.setText(d.hTemp[i] + "\u00B0");
+                LinearLayout.LayoutParams hvl = new LinearLayout.LayoutParams(-2, -2);
+                hvl.topMargin = px(6);
+                h.addView(hv, hvl);
+                TextView hr = text(12, d.hRain[i] >= 40 ? 0xFF8EC5FF : 0x80FFFFFF, tfRegular);
+                hr.setText(d.hRain[i] + "%");
+                LinearLayout.LayoutParams hrl = new LinearLayout.LayoutParams(-2, -2);
+                hrl.topMargin = px(4);
+                h.addView(hr, hrl);
+                hours.addView(h, new LinearLayout.LayoutParams(0, -2, 1f));
+            }
+            LinearLayout.LayoutParams hsl = new LinearLayout.LayoutParams(-1, -2);
+            hsl.topMargin = px(20);
+            hsl.rightMargin = px(40);
+            left.addView(hours, hsl);
+
+            TextView sun = text(15, 0xE6FFFFFF, tfRegular);
+            sun.setText("Sunrise " + hm(d.sunrise) + "     Sunset " + hm(d.sunset));
+            LinearLayout.LayoutParams sl = new LinearLayout.LayoutParams(-2, -2);
+            sl.topMargin = px(22);
+            left.addView(sun, sl);
+
+            if (!Double.isNaN(d.dawnWave)) {
+                TextView sf = text(15, 0xE6FFFFFF, tfRegular);
+                sf.setText((d.dawnTomorrow ? "Tomorrow's dawn surf  " : "Dawn surf  ")
+                        + String.format(Locale.ROOT, "%.1f m", d.dawnWave) + " from the " + compass(d.dawnDir));
+                LinearLayout.LayoutParams sfl = new LinearLayout.LayoutParams(-2, -2);
+                sfl.topMargin = px(8);
+                left.addView(sf, sfl);
+            }
+        }
+
+        // Right: calendar + headlines
+        LinearLayout right = new LinearLayout(this);
+        right.setOrientation(LinearLayout.VERTICAL);
+        cols.addView(right, new LinearLayout.LayoutParams(0, -1, 1f));
+        if (prefs.getString("icsUrl", null) != null) {
+            right.addView(label("CALENDAR"));
+            int shown = 0;
+            if (calEvents != null) {
+                String today = fmt("yyyyMMdd", now);
+                for (Cal.Event e : calEvents) {
+                    if (e.end <= now || shown >= 4) continue;
+                    boolean isToday = fmt("yyyyMMdd", e.start).equals(today) || e.start < now;
+                    TextView ev = text(16, 0xFFFFFFFF, tfMedium);
+                    ev.setSingleLine(true);
+                    ev.setEllipsize(TextUtils.TruncateAt.END);
+                    ev.setText(e.title);
+                    TextView when = text(13, 0xB3FFFFFF, tfRegular);
+                    when.setText((isToday ? "" : "Tomorrow \u00B7 ")
+                            + (e.allDay ? "All day" : timeOf(e.start) + " \u2013 " + timeOf(e.end)));
+                    LinearLayout.LayoutParams el = new LinearLayout.LayoutParams(-1, -2);
+                    el.topMargin = px(shown == 0 ? 10 : 12);
+                    right.addView(ev, el);
+                    LinearLayout.LayoutParams wl2 = new LinearLayout.LayoutParams(-2, -2);
+                    wl2.topMargin = px(2);
+                    right.addView(when, wl2);
+                    shown++;
+                }
+            }
+            if (shown == 0) {
+                TextView none = text(15, 0xB3FFFFFF, tfRegular);
+                none.setText("Nothing on today or tomorrow");
+                LinearLayout.LayoutParams nl = new LinearLayout.LayoutParams(-2, -2);
+                nl.topMargin = px(10);
+                right.addView(none, nl);
+            }
+        }
+        TextView hlab = label("HEADLINES");
+        LinearLayout.LayoutParams hlb = new LinearLayout.LayoutParams(-2, -2);
+        hlb.topMargin = prefs.getString("icsUrl", null) != null ? px(26) : 0;
+        right.addView(hlab, hlb);
+        int maxH = prefs.getString("icsUrl", null) != null ? 3 : 6;
+        for (int i = 0; i < Math.min(maxH, headlines.size()); i++) {
+            TextView h = text(15, 0xF2FFFFFF, tfRegular);
+            h.setMaxLines(2);
+            h.setEllipsize(TextUtils.TruncateAt.END);
+            h.setLineSpacing(px(2), 1f);
+            h.setText(headlines.get(i));
+            LinearLayout.LayoutParams hl2 = new LinearLayout.LayoutParams(-1, -2);
+            hl2.topMargin = px(i == 0 ? 10 : 12);
+            right.addView(h, hl2);
+        }
+
+        TextView hint = text(13, 0x80FFFFFF, tfRegular);
+        hint.setText("Press OK or Back to close");
+        LinearLayout.LayoutParams hil = new LinearLayout.LayoutParams(-2, -2);
+        hil.topMargin = px(10);
+        todayBody.addView(hint, hil);
     }
 
     // ---------------------------------------------------------------- surf
@@ -1474,7 +1946,7 @@ public class MainActivity extends Activity {
     }
 
     private void startDream() {
-        if (dreaming || appsOpen || splash.getVisibility() == View.VISIBLE) {
+        if (dreaming || appsOpen || todayOpen || splash.getVisibility() == View.VISIBLE) {
             resetIdle();
             return;
         }
@@ -1728,6 +2200,36 @@ public class MainActivity extends Activity {
         final boolean wxHidden = prefs.getBoolean("hideWeather", false);
         labels.add(wxHidden ? "Show weather" : "Hide weather");
         acts.add(() -> toggle("hideWeather"));
+        final boolean hasCal = prefs.getString("icsUrl", null) != null;
+        labels.add(hasCal ? "Change calendar" : "Add your calendar");
+        acts.add(this::calendarSetup);
+        if (hasCal) {
+            labels.add("Remove calendar");
+            acts.add(() -> {
+                prefs.edit().remove("icsUrl").apply();
+                calEvents = null;
+                updateUpNext();
+            });
+        }
+        labels.add("Set up Now Playing");
+        acts.add(() -> {
+            Toast.makeText(this, "Turn on \"Shelf now playing\"", Toast.LENGTH_LONG).show();
+            try {
+                Intent i = new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS");
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+            } catch (Exception ex) {
+                Toast.makeText(this, "This projector hides that setting \u2014 Now Playing can't be switched on here",
+                        Toast.LENGTH_LONG).show();
+            }
+        });
+        if (prefs.getBoolean("noAirplay", false)) {
+            labels.add("Show AirPlay tile");
+            acts.add(() -> {
+                prefs.edit().remove("noAirplay").apply();
+                rebuildRows();
+            });
+        }
         final boolean surfHidden = prefs.getBoolean("hideSurf", false);
         labels.add(surfHidden ? "Show surf report" : "Hide surf report");
         acts.add(() -> toggle("hideSurf"));

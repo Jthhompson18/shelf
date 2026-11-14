@@ -34,6 +34,80 @@ final class Glance {
     private Glance() {
     }
 
+    static final class Day {
+        final String[] hTime = new String[6];
+        final int[] hTemp = new int[6], hRain = new int[6], hCode = new int[6];
+        int n, hi, lo, code, rainMax;
+        double uv;
+        String sunrise, sunset;
+        double dawnWave = Double.NaN;
+        int dawnDir;
+        boolean dawnTomorrow;
+    }
+
+    /** Fuller forecast for the Today screen. */
+    static Day day() {
+        Day d = new Day();
+        try {
+            JSONObject o = new JSONObject(get("https://api.open-meteo.com/v1/forecast?latitude=-33.8915&longitude=151.2767"
+                    + "&hourly=temperature_2m,weather_code,precipitation_probability"
+                    + "&daily=sunrise,sunset,uv_index_max,temperature_2m_max,temperature_2m_min,"
+                    + "precipitation_probability_max,weather_code"
+                    + "&timezone=Australia%2FSydney&forecast_days=2"));
+            JSONObject hr = o.getJSONObject("hourly");
+            org.json.JSONArray t = hr.getJSONArray("time");
+            String nowKey = MainActivity.fmt("yyyy-MM-dd'T'HH:00", System.currentTimeMillis());
+            int idx = 0;
+            for (int i = 0; i < t.length(); i++) {
+                if (t.getString(i).compareTo(nowKey) >= 0) {
+                    idx = i;
+                    break;
+                }
+            }
+            for (int k = 0; k < 6; k++) {
+                int i = idx + k * 2;
+                if (i >= t.length()) break;
+                d.hTime[k] = t.getString(i).substring(11, 16);
+                d.hTemp[k] = (int) Math.round(hr.getJSONArray("temperature_2m").getDouble(i));
+                d.hRain[k] = hr.getJSONArray("precipitation_probability").optInt(i, 0);
+                d.hCode[k] = hr.getJSONArray("weather_code").optInt(i, 0);
+                d.n = k + 1;
+            }
+            JSONObject dy = o.getJSONObject("daily");
+            d.sunrise = dy.getJSONArray("sunrise").getString(0).substring(11, 16);
+            d.sunset = dy.getJSONArray("sunset").getString(0).substring(11, 16);
+            d.uv = dy.getJSONArray("uv_index_max").optDouble(0, 0);
+            d.hi = (int) Math.round(dy.getJSONArray("temperature_2m_max").getDouble(0));
+            d.lo = (int) Math.round(dy.getJSONArray("temperature_2m_min").getDouble(0));
+            d.rainMax = dy.getJSONArray("precipitation_probability_max").optInt(0, 0);
+            d.code = dy.getJSONArray("weather_code").optInt(0, 0);
+        } catch (Throwable ignored) {
+        }
+        try {
+            JSONObject o = new JSONObject(get("https://marine-api.open-meteo.com/v1/marine"
+                    + "?latitude=-33.8915&longitude=151.2767&hourly=wave_height,wave_direction"
+                    + "&timezone=Australia%2FSydney&forecast_days=2"));
+            JSONObject hr = o.getJSONObject("hourly");
+            org.json.JSONArray t = hr.getJSONArray("time");
+            long now = System.currentTimeMillis();
+            d.dawnTomorrow = MainActivity.sydneyHour() >= 6;
+            String day = MainActivity.fmt("yyyy-MM-dd", d.dawnTomorrow ? now + 86400000L : now);
+            for (int i = 0; i < t.length(); i++) {
+                if (t.getString(i).equals(day + "T06:00")) {
+                    d.dawnWave = hr.getJSONArray("wave_height").getDouble(i);
+                    d.dawnDir = (int) Math.round(hr.getJSONArray("wave_direction").optDouble(i, 90));
+                    break;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return d;
+    }
+
+    static String describeCode(int code) {
+        return describe(code);
+    }
+
     static final class Surf {
         double wave, period, water = Double.NaN;
         int dir;
