@@ -149,6 +149,9 @@ public class MainActivity extends Activity {
     private View splashHelloRow;
     private BroadcastReceiver screenReceiver;
     private boolean briefAfterSplash, autoBrief;
+    private View sunTint;
+    private LinearLayout sunPill;
+    private TextView sunPillText;
     private ImageView wxIcon;
     private android.media.SoundPool sounds;
     private int sTick, sSelect;
@@ -227,6 +230,7 @@ public class MainActivity extends Activity {
             boolean h24 = DateFormat.is24HourFormat(MainActivity.this);
             clock.setText(fmt(h24 ? "HH:mm" : "h:mm", now));
             date.setText(fmt("EEEE d MMMM", now));
+            updateSun();
             handler.postDelayed(this, 5000);
         }
     };
@@ -499,6 +503,10 @@ public class MainActivity extends Activity {
         fx.setVisibility(View.GONE);
         root.addView(fx, new FrameLayout.LayoutParams(-1, -1));
 
+        sunTint = new View(this);
+        sunTint.setBackgroundColor(0);
+        root.addView(sunTint, new FrameLayout.LayoutParams(-1, -1));
+
         if (wallpapers.isEmpty()) {
             View g = new View(this);
             g.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
@@ -536,6 +544,30 @@ public class MainActivity extends Activity {
         dlp.topMargin = px(4);
         dlp.leftMargin = px(3);
         hello.addView(date, dlp);
+
+        sunPill = new LinearLayout(this);
+        sunPill.setOrientation(LinearLayout.HORIZONTAL);
+        sunPill.setGravity(Gravity.CENTER_VERTICAL);
+        sunPill.setPadding(px(12), px(6), px(14), px(7));
+        GradientDrawable pg = new GradientDrawable();
+        pg.setCornerRadius(px(14));
+        pg.setColor(0x33000000);
+        pg.setStroke(Math.max(1, px(1)), 0x33FFC58A);
+        sunPill.setBackground(pg);
+        View sd = new View(this);
+        GradientDrawable sdg = new GradientDrawable();
+        sdg.setShape(GradientDrawable.OVAL);
+        sdg.setColor(0xFFFFA24A);
+        sd.setBackground(sdg);
+        sunPill.addView(sd, new LinearLayout.LayoutParams(px(8), px(8)));
+        sunPillText = text(14, 0xF2FFE3C4, tfMedium);
+        LinearLayout.LayoutParams spt = new LinearLayout.LayoutParams(-2, -2);
+        spt.leftMargin = px(8);
+        sunPill.addView(sunPillText, spt);
+        LinearLayout.LayoutParams spl = new LinearLayout.LayoutParams(-2, -2);
+        spl.topMargin = px(12);
+        sunPill.setVisibility(View.GONE);
+        hello.addView(sunPill, spl);
         FrameLayout.LayoutParams hlp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START);
         hlp.topMargin = px(30);
         hlp.leftMargin = px(58);
@@ -1213,6 +1245,7 @@ public class MainActivity extends Activity {
             favRow.addView(getAppleTvTile());
         }
         favRow.addView(todayTile());
+        if (!prefs.getBoolean("noLive", false)) favRow.addView(liveTile());
         if (!prefs.getBoolean("noAirplay", false)) favRow.addView(airplayTile());
         if (!prefs.getBoolean("noXbox", false)) favRow.addView(xboxTile());
         favRow.addView(sleepTile());
@@ -1884,6 +1917,123 @@ public class MainActivity extends Activity {
         return t;
     }
 
+    // ---------------------------------------------------------------- sun-following colour + golden hour
+
+    private static int lerp(int a, int b, float t) {
+        t = Math.max(0f, Math.min(1f, t));
+        int aa = a >>> 24, ar = (a >> 16) & 0xFF, ag = (a >> 8) & 0xFF, ab = a & 0xFF;
+        int ba = b >>> 24, br = (b >> 16) & 0xFF, bg = (b >> 8) & 0xFF, bb = b & 0xFF;
+        return ((int) (aa + (ba - aa) * t) << 24) | ((int) (ar + (br - ar) * t) << 16)
+                | ((int) (ag + (bg - ag) * t) << 8) | (int) (ab + (bb - ab) * t);
+    }
+
+    /** Colour wash over the photo that follows Bondi's sun through the day. */
+    private int skyTint(int m, int sr, int ss) {
+        final int NIGHT = 0x40020814, EVENING = 0x2A061030, DAWN = 0x2EFF9E8A, CLEAR = 0x00FFFFFF,
+                GOLD = 0x33FF8A3D, DUSK = 0x2E7A4FD0;
+        int[] at = {0, sr - 60, sr - 15, sr + 60, ss - 75, ss - 20, ss + 10, ss + 50, 22 * 60, 24 * 60};
+        int[] col = {NIGHT, NIGHT, DAWN, CLEAR, CLEAR, GOLD, DUSK, EVENING, NIGHT, NIGHT};
+        for (int i = 0; i < at.length - 1; i++) {
+            if (m >= at[i] && m < at[i + 1]) {
+                return lerp(col[i], col[i + 1], (m - at[i]) / (float) Math.max(1, at[i + 1] - at[i]));
+            }
+        }
+        return NIGHT;
+    }
+
+    private void updateSun() {
+        if (sunTint == null) return;
+        java.util.Calendar c = java.util.Calendar.getInstance(SYDNEY);
+        int m = c.get(java.util.Calendar.HOUR_OF_DAY) * 60 + c.get(java.util.Calendar.MINUTE);
+        int sr = lastWx != null && lastWx.sunrise > 0 ? lastWx.sunrise : 6 * 60;
+        int ss = lastWx != null && lastWx.sunset > 0 ? lastWx.sunset : 19 * 60 + 30;
+        sunTint.setBackgroundColor(prefs.getBoolean("noSkyTint", false) ? 0 : skyTint(m, sr, ss));
+
+        int toSunset = ss - m;
+        boolean show = !prefs.getBoolean("noGolden", false) && toSunset > 0 && toSunset <= 20;
+        if (show) {
+            int h = ss / 60, mm = ss % 60;
+            String t = DateFormat.is24HourFormat(this) ? String.format(Locale.ROOT, "%02d:%02d", h, mm)
+                    : String.format(Locale.ROOT, "%d:%02d pm", h % 12 == 0 ? 12 : h % 12, mm);
+            sunPillText.setText("Sunset in " + toSunset + " min  \u00B7  " + t);
+        }
+        if (show != (sunPill.getVisibility() == View.VISIBLE)) {
+            if (show) {
+                sunPill.setAlpha(0f);
+                sunPill.setVisibility(View.VISIBLE);
+                sunPill.animate().alpha(1f).setDuration(600).start();
+            } else {
+                sunPill.setVisibility(View.GONE);
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- Live Bondi
+
+    private static final String[][] CAMS = {
+            {"Windy \u2013 Bondi Pavilion & North Bondi", "https://www.windy.com/webcams/1721795690"},
+            {"Weathercam \u2013 North Bondi RSL", "https://www.weathercamnetwork.com.au/bondi_beach.html"},
+            {"Surf-Forecast \u2013 Bondi surf cams", "https://www.surf-forecast.com/breaks/Bondi-Beach/webcams/latest"},
+    };
+
+    private View liveTile() {
+        final Cell c = cell(true, "fav:__live__", "Live Bondi");
+        c.tile.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0xFF1E6F8F, 0xFF0B2F44}));
+        LinearLayout v = new LinearLayout(this);
+        v.setOrientation(LinearLayout.VERTICAL);
+        v.setGravity(Gravity.CENTER);
+        LinearLayout liveRow = new LinearLayout(this);
+        liveRow.setGravity(Gravity.CENTER_VERTICAL);
+        View dot = new View(this);
+        GradientDrawable dg = new GradientDrawable();
+        dg.setShape(GradientDrawable.OVAL);
+        dg.setColor(0xFFFF453A);
+        dot.setBackground(dg);
+        liveRow.addView(dot, new LinearLayout.LayoutParams(px(7), px(7)));
+        TextView live = text(11, 0xFFFFFFFF, tfSemi);
+        live.setLetterSpacing(0.18f);
+        live.setText("LIVE");
+        LinearLayout.LayoutParams ll = new LinearLayout.LayoutParams(-2, -2);
+        ll.leftMargin = px(6);
+        liveRow.addView(live, ll);
+        v.addView(liveRow);
+        TextView place = text(26, 0xFFFFFFFF, tfLight);
+        place.setText("Bondi");
+        LinearLayout.LayoutParams pl = new LinearLayout.LayoutParams(-2, -2);
+        pl.topMargin = px(2);
+        v.addView(place, pl);
+        c.tile.addView(v, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
+        wireFocus(c, "fav:__live__");
+        c.tile.setOnClickListener(x -> openCam(prefs.getInt("cam", 0)));
+        c.tile.setOnLongClickListener(x -> {
+            List<String> l = new ArrayList<>();
+            List<Runnable> r = new ArrayList<>();
+            for (int i = 0; i < CAMS.length; i++) {
+                final int idx = i;
+                l.add((prefs.getInt("cam", 0) == i ? "\u2713  " : "") + CAMS[i][0]);
+                r.add(() -> {
+                    prefs.edit().putInt("cam", idx).apply();
+                    openCam(idx);
+                });
+            }
+            l.add("Remove Live Bondi tile");
+            r.add(() -> {
+                prefs.edit().putBoolean("noLive", true).apply();
+                lastFocused = null;
+                rebuildRows();
+            });
+            menu("Live Bondi", l, r);
+            return true;
+        });
+        return c.root;
+    }
+
+    private void openCam(int i) {
+        if (i < 0 || i >= CAMS.length) i = 0;
+        safeStart(new Intent(Intent.ACTION_VIEW, Uri.parse(CAMS[i][1])));
+    }
+
     private static boolean isDayAt(Glance.Day d, String hhmm) {
         if (hhmm == null || d.sunrise == null || d.sunset == null) return true;
         return hhmm.compareTo(d.sunrise) >= 0 && hhmm.compareTo(d.sunset) < 0;
@@ -2395,6 +2545,25 @@ public class MainActivity extends Activity {
         final boolean surfHidden = prefs.getBoolean("hideSurf", false);
         labels.add(surfHidden ? "Show surf report" : "Hide surf report");
         acts.add(() -> toggle("hideSurf"));
+        final boolean tintOff = prefs.getBoolean("noSkyTint", false);
+        labels.add(tintOff ? "Turn sun colours on" : "Turn sun colours off");
+        acts.add(() -> {
+            prefs.edit().putBoolean("noSkyTint", !tintOff).apply();
+            updateSun();
+        });
+        final boolean goldOff = prefs.getBoolean("noGolden", false);
+        labels.add(goldOff ? "Turn sunset reminder on" : "Turn sunset reminder off");
+        acts.add(() -> {
+            prefs.edit().putBoolean("noGolden", !goldOff).apply();
+            updateSun();
+        });
+        if (prefs.getBoolean("noLive", false)) {
+            labels.add("Show Live Bondi tile");
+            acts.add(() -> {
+                prefs.edit().remove("noLive").apply();
+                rebuildRows();
+            });
+        }
         final boolean soundsOff = prefs.getBoolean("noSounds", false);
         labels.add(soundsOff ? "Turn navigation sounds on" : "Turn navigation sounds off");
         acts.add(() -> prefs.edit().putBoolean("noSounds", !soundsOff).apply());

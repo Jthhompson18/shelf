@@ -19,6 +19,7 @@ final class Glance {
     static final class Weather {
         int temp, hi, lo, code;
         int wind = -1, windDir;
+        int sunrise = -1, sunset = -1; // minutes after midnight, Sydney
         boolean isDay = true;
         String condition;
     }
@@ -26,7 +27,7 @@ final class Glance {
     private static final String WEATHER_URL =
             "https://api.open-meteo.com/v1/forecast?latitude=-33.8915&longitude=151.2767"
                     + "&current=temperature_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m"
-                    + "&daily=temperature_2m_max,temperature_2m_min"
+                    + "&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset"
                     + "&timezone=Australia%2FSydney&forecast_days=1";
 
     private static final String NEWS_URL = "https://www.abc.net.au/news/feed/51120/rss.xml";
@@ -132,6 +133,18 @@ final class Glance {
         }
     }
 
+    static int mins(String hhmm) {
+        return Integer.parseInt(hhmm.substring(0, 2)) * 60 + Integer.parseInt(hhmm.substring(3, 5));
+    }
+
+    /** "05:43 AM" -> minutes after midnight */
+    static int ampm(String s) {
+        s = s.trim().toUpperCase();
+        int h = Integer.parseInt(s.substring(0, 2)) % 12, m = Integer.parseInt(s.substring(3, 5));
+        if (s.endsWith("PM")) h += 12;
+        return h * 60 + m;
+    }
+
     static Weather weather() {
         Weather w = openMeteo();
         return w != null ? w : wttr();
@@ -147,6 +160,12 @@ final class Glance {
             w.temp = Integer.parseInt(cur.getString("temp_C"));
             w.hi = Integer.parseInt(day.getString("maxtempC"));
             w.lo = Integer.parseInt(day.getString("mintempC"));
+            try {
+                JSONObject astro = day.getJSONArray("astronomy").getJSONObject(0);
+                w.sunrise = ampm(astro.getString("sunrise"));
+                w.sunset = ampm(astro.getString("sunset"));
+            } catch (Throwable ignored) {
+            }
             String d = cur.getJSONArray("weatherDesc").getJSONObject(0).getString("value").trim();
             String l = d.toLowerCase();
             w.code = l.contains("thunder") ? 95 : l.contains("heavy rain") ? 63
@@ -180,6 +199,11 @@ final class Glance {
                 w.windDir = (int) Math.round(cur.optDouble("wind_direction_10m", 0));
             }
             w.hi = (int) Math.round(daily.getJSONArray("temperature_2m_max").getDouble(0));
+            try {
+                w.sunrise = mins(daily.getJSONArray("sunrise").getString(0).substring(11, 16));
+                w.sunset = mins(daily.getJSONArray("sunset").getString(0).substring(11, 16));
+            } catch (Throwable ignored) {
+            }
             w.lo = (int) Math.round(daily.getJSONArray("temperature_2m_min").getDouble(0));
             return w;
         } catch (Throwable t) {
