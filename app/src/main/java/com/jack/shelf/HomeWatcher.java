@@ -17,12 +17,31 @@ import java.util.Set;
  */
 public class HomeWatcher extends AccessibilityService {
 
+    private static HomeWatcher instance;
+
+    static boolean isOn() {
+        return instance != null;
+    }
+
+    /** Switches the screen off (projector standby). Needs Android 9+. */
+    static boolean lockNow() {
+        if (instance == null || android.os.Build.VERSION.SDK_INT < 28) return false;
+        return instance.performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN);
+    }
+
+    @Override
+    public void onDestroy() {
+        instance = null;
+        super.onDestroy();
+    }
+
     private final Set<String> homes = new HashSet<>();
     private long last;
 
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
+        instance = this;
         refreshHomes();
     }
 

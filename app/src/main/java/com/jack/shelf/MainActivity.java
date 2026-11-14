@@ -93,7 +93,17 @@ public class MainActivity extends Activity {
     private LinearLayout appsGrid;
     private android.widget.ScrollView appsScroll;
     private boolean appsOpen;
-    private View wxCard, newsCard;
+    private View wxCard, newsCard, surfCard;
+    private TextView surfMain, surfSub;
+    private View helloBlock, sideBlock, rowsBlock, bottomShadeView;
+    private boolean dreaming;
+    private static final long IDLE_MS = 3 * 60 * 1000L;
+    private final Runnable idleRunnable = new Runnable() {
+        @Override
+        public void run() {
+            startDream();
+        }
+    };
     private HorizontalScrollView favScroll, allScroll;
     private static final String NAME = "Jack";
     private WeatherFx fx;
@@ -227,6 +237,7 @@ public class MainActivity extends Activity {
         glanceTick.run();
         checkForUpdate(false);
         if (fx != null) fx.setRunning(true);
+        wake();
     }
 
     @Override
@@ -237,6 +248,7 @@ public class MainActivity extends Activity {
         handler.removeCallbacks(glanceTick);
         handler.removeCallbacks(weatherRetry);
         handler.removeCallbacks(headlineTick);
+        handler.removeCallbacks(idleRunnable);
         if (fx != null) fx.setRunning(false);
     }
 
@@ -425,6 +437,7 @@ public class MainActivity extends Activity {
         bottomShade.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
                 new int[]{0x00000000, 0x8C000000, 0xE0000000}));
         root.addView(bottomShade, new FrameLayout.LayoutParams(-1, px(330), Gravity.BOTTOM));
+        bottomShadeView = bottomShade;
 
         // Top left: big clock, greeting, date
         LinearLayout hello = new LinearLayout(this);
@@ -443,6 +456,7 @@ public class MainActivity extends Activity {
         hlp.topMargin = px(30);
         hlp.leftMargin = px(58);
         root.addView(hello, hlp);
+        helloBlock = hello;
 
         // Top right: weather + headlines in frosted cards
         LinearLayout side = new LinearLayout(this);
@@ -477,6 +491,25 @@ public class MainActivity extends Activity {
         side.addView(wx, new LinearLayout.LayoutParams(px(300), -2));
         wxCard = wx;
 
+        LinearLayout surf = glass();
+        TextView surfLabel = text(12, 0xCCFFFFFF, tfSemi);
+        surfLabel.setLetterSpacing(0.12f);
+        surfLabel.setText("BONDI SURF");
+        surf.addView(surfLabel);
+        surfMain = text(22, 0xFFFFFFFF, tfLight);
+        surfMain.setText("--");
+        LinearLayout.LayoutParams sml = new LinearLayout.LayoutParams(-2, -2);
+        sml.topMargin = px(6);
+        surf.addView(surfMain, sml);
+        surfSub = text(13, 0xBFFFFFFF, tfRegular);
+        LinearLayout.LayoutParams ssl2 = new LinearLayout.LayoutParams(-2, -2);
+        ssl2.topMargin = px(4);
+        surf.addView(surfSub, ssl2);
+        LinearLayout.LayoutParams sfl = new LinearLayout.LayoutParams(px(300), -2);
+        sfl.topMargin = px(12);
+        side.addView(surf, sfl);
+        surfCard = surf;
+
         LinearLayout news = glass();
         TextView newsLabel = text(12, 0xCCFFFFFF, tfSemi);
         newsLabel.setLetterSpacing(0.12f);
@@ -500,6 +533,7 @@ public class MainActivity extends Activity {
         slp.topMargin = px(32);
         slp.rightMargin = px(52);
         root.addView(side, slp);
+        sideBlock = side;
 
         // Rows at the bottom
         LinearLayout col = new LinearLayout(this);
@@ -523,6 +557,7 @@ public class MainActivity extends Activity {
         allScroll.setVisibility(View.GONE); // replaced by the Apps grid
 
         root.addView(col, new FrameLayout.LayoutParams(-1, -1));
+        rowsBlock = col;
 
         // Full-screen Apps grid
         appsPanel = new FrameLayout(this);
@@ -686,6 +721,11 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
+        if (dreaming) {
+            if (e.getAction() == KeyEvent.ACTION_UP) wake();
+            return true;
+        }
+        if (e.getAction() == KeyEvent.ACTION_DOWN) resetIdle();
         if (splash != null && splash.getVisibility() == View.VISIBLE && splash.getAlpha() > 0.5f) {
             if (e.getAction() == KeyEvent.ACTION_UP) dismissWelcome();
             return true;
@@ -719,6 +759,7 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             final Glance.Weather w = Glance.weather();
             final List<String> h = Glance.headlines();
+            final Glance.Surf sf = Glance.surf();
             runOnUiThread(() -> {
                 if (w == null) {
                     handler.removeCallbacks(weatherRetry);
@@ -732,6 +773,7 @@ public class MainActivity extends Activity {
                     wxCond.setText(w.condition);
                     wxRange.setText("H " + w.hi + "°   L " + w.lo + "°");
                 }
+                if (sf != null) showSurf(sf, w != null ? w : lastWx);
                 if (!h.isEmpty()) {
                     headlines.clear();
                     headlines.addAll(h);
@@ -987,6 +1029,7 @@ public class MainActivity extends Activity {
             favRow.addView(getAppleTvTile());
         }
         if (!prefs.getBoolean("noXbox", false)) favRow.addView(xboxTile());
+        favRow.addView(sleepTile());
         favRow.addView(appsTile());
         favRow.addView(settingsTile());
 
@@ -1069,9 +1112,32 @@ public class MainActivity extends Activity {
     }
 
     private void wireFocus(final Cell c, final String key) {
+        final View shine = new View(this);
+        shine.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{0x00FFFFFF, 0x38FFFFFF, 0x00FFFFFF}));
+        shine.setRotation(18f);
+        shine.setVisibility(View.INVISIBLE);
+        final int tw = ((LinearLayout.LayoutParams) c.tile.getLayoutParams()).width;
+        final int th = ((LinearLayout.LayoutParams) c.tile.getLayoutParams()).height;
+        c.tile.addView(shine, new FrameLayout.LayoutParams(Math.round(tw * 0.45f), th * 2, Gravity.CENTER_VERTICAL));
         c.tile.setOnFocusChangeListener(new View.OnFocusChangeListener() {
             @Override
             public void onFocusChange(View v, boolean has) {
+                shine.animate().cancel();
+                if (has) {
+                    shine.setTranslationX(-tw * 0.6f);
+                    shine.setVisibility(View.VISIBLE);
+                    shine.animate().translationX(tw * 1.1f).setStartDelay(120).setDuration(750)
+                            .setInterpolator(new DecelerateInterpolator(1.2f))
+                            .withEndAction(new Runnable() {
+                                @Override
+                                public void run() {
+                                    shine.setVisibility(View.INVISIBLE);
+                                }
+                            }).start();
+                } else {
+                    shine.setVisibility(View.INVISIBLE);
+                }
                 v.animate()
                         .scaleX(has ? 1.13f : 1f)
                         .scaleY(has ? 1.13f : 1f)
@@ -1363,10 +1429,133 @@ public class MainActivity extends Activity {
 
     private void applyCardPrefs() {
         wxCard.setVisibility(prefs.getBoolean("hideWeather", false) ? View.GONE : View.VISIBLE);
+        surfCard.setVisibility(prefs.getBoolean("hideSurf", false) ? View.GONE : View.VISIBLE);
         newsCard.setVisibility(prefs.getBoolean("hideNews", false) ? View.GONE : View.VISIBLE);
-        LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) newsCard.getLayoutParams();
-        lp.topMargin = wxCard.getVisibility() == View.VISIBLE ? px(12) : 0;
-        newsCard.setLayoutParams(lp);
+        boolean first = true;
+        for (View v : new View[]{wxCard, surfCard, newsCard}) {
+            LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) v.getLayoutParams();
+            lp.topMargin = (v.getVisibility() == View.VISIBLE && !first) ? px(12) : 0;
+            v.setLayoutParams(lp);
+            if (v.getVisibility() == View.VISIBLE) first = false;
+        }
+    }
+
+    // ---------------------------------------------------------------- surf
+
+    private static String compass(int deg) {
+        String[] d = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
+        return d[Math.round(((deg % 360) + 360) % 360 / 45f) % 8];
+    }
+
+    private void showSurf(Glance.Surf sf, Glance.Weather w) {
+        surfMain.setText(String.format(Locale.ROOT, "%.1f m  \u00B7  %ds  \u00B7  %s",
+                sf.wave, Math.round(sf.period), compass(sf.dir)));
+        StringBuilder sub = new StringBuilder();
+        if (!Double.isNaN(sf.water)) sub.append("Water ").append(Math.round(sf.water)).append("\u00B0");
+        if (w != null && w.wind >= 0) {
+            if (sub.length() > 0) sub.append("   \u00B7   ");
+            // Bondi faces roughly east-south-east, so a westerly is offshore.
+            int diff = Math.abs(((w.windDir - 290) % 360 + 540) % 360 - 180);
+            String kind = diff < 50 ? "offshore" : diff > 130 ? "onshore" : "cross-shore";
+            sub.append(w.wind).append(" km/h ").append(compass(w.windDir)).append(" ").append(kind);
+        }
+        surfSub.setText(sub.toString());
+    }
+
+    // ---------------------------------------------------------------- screensaver
+
+    private void resetIdle() {
+        handler.removeCallbacks(idleRunnable);
+        if (!prefs.getBoolean("noDream", false)) handler.postDelayed(idleRunnable, IDLE_MS);
+    }
+
+    private void startDream() {
+        if (dreaming || appsOpen || splash.getVisibility() == View.VISIBLE) {
+            resetIdle();
+            return;
+        }
+        dreaming = true;
+        for (View v : new View[]{sideBlock, rowsBlock, bottomShadeView}) {
+            v.animate().alpha(0f).setDuration(1500).start();
+        }
+        helloBlock.animate().alpha(0.85f).setDuration(1500).start();
+    }
+
+    private void wake() {
+        boolean was = dreaming;
+        dreaming = false;
+        for (View v : new View[]{sideBlock, rowsBlock, bottomShadeView, helloBlock}) {
+            if (v == null) continue;
+            v.animate().cancel();
+            if (was) v.animate().alpha(1f).setDuration(400).start();
+            else v.setAlpha(1f);
+        }
+        resetIdle();
+    }
+
+    // ---------------------------------------------------------------- goodnight
+
+    private View sleepTile() {
+        long at = prefs.getLong("sleepAt", 0);
+        boolean set = at > System.currentTimeMillis();
+        String label = set ? "Sleeping at " + fmt(DateFormat.is24HourFormat(this) ? "HH:mm" : "h:mm a", at) : "Goodnight";
+        final Cell c = cell(true, "fav:__sleep__", label);
+        c.tile.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0xFF2B3360, 0xFF0E1230}));
+        ImageView moon = new ImageView(this);
+        moon.setImageDrawable(new MoonDrawable(0xFFF3E9C6));
+        int mh = Math.round(((LinearLayout.LayoutParams) c.tile.getLayoutParams()).height * 0.46f);
+        c.tile.addView(moon, new FrameLayout.LayoutParams(mh, mh, Gravity.CENTER));
+        wireFocus(c, "fav:__sleep__");
+        c.tile.setOnClickListener(v -> sleepMenu());
+        return c.root;
+    }
+
+    private void sleepMenu() {
+        List<String> l = new ArrayList<>();
+        List<Runnable> r = new ArrayList<>();
+        l.add("Turn off now");
+        r.add(() -> {
+            if (!SleepReceiver.sleepNow(this)) needAccessibility();
+        });
+        for (final int mins : new int[]{30, 60, 90}) {
+            l.add("Turn off in " + mins + " minutes");
+            r.add(() -> setSleep(mins));
+        }
+        if (prefs.getLong("sleepAt", 0) > System.currentTimeMillis()) {
+            l.add("Cancel sleep timer");
+            r.add(() -> setSleep(0));
+        }
+        menu("Goodnight, " + NAME, l, r);
+    }
+
+    private void setSleep(int mins) {
+        android.app.AlarmManager am = (android.app.AlarmManager) getSystemService(Context.ALARM_SERVICE);
+        int flags = android.app.PendingIntent.FLAG_UPDATE_CURRENT
+                | (android.os.Build.VERSION.SDK_INT >= 23 ? android.app.PendingIntent.FLAG_IMMUTABLE : 0);
+        android.app.PendingIntent pi = android.app.PendingIntent.getBroadcast(this, 7,
+                new Intent(this, SleepReceiver.class), flags);
+        am.cancel(pi);
+        if (mins <= 0) {
+            prefs.edit().remove("sleepAt").apply();
+            Toast.makeText(this, "Sleep timer cancelled", Toast.LENGTH_SHORT).show();
+        } else {
+            if (!HomeWatcher.isOn()) {
+                needAccessibility();
+                return;
+            }
+            long at = System.currentTimeMillis() + mins * 60000L;
+            am.set(android.app.AlarmManager.RTC_WAKEUP, at, pi);
+            prefs.edit().putLong("sleepAt", at).apply();
+            Toast.makeText(this, "Projector will turn off in " + mins + " minutes", Toast.LENGTH_LONG).show();
+        }
+        rebuildRows();
+    }
+
+    private void needAccessibility() {
+        Toast.makeText(this, "Turn on \"Shelf home button\" first \u2014 it lets Shelf switch the projector off",
+                Toast.LENGTH_LONG).show();
+        safeStart(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
     }
 
     private void toggle(String key) {
@@ -1535,6 +1724,15 @@ public class MainActivity extends Activity {
         final boolean wxHidden = prefs.getBoolean("hideWeather", false);
         labels.add(wxHidden ? "Show weather" : "Hide weather");
         acts.add(() -> toggle("hideWeather"));
+        final boolean surfHidden = prefs.getBoolean("hideSurf", false);
+        labels.add(surfHidden ? "Show surf report" : "Hide surf report");
+        acts.add(() -> toggle("hideSurf"));
+        final boolean dreamOff = prefs.getBoolean("noDream", false);
+        labels.add(dreamOff ? "Turn screensaver on" : "Turn screensaver off");
+        acts.add(() -> {
+            prefs.edit().putBoolean("noDream", !dreamOff).apply();
+            wake();
+        });
         final boolean newsHidden = prefs.getBoolean("hideNews", false);
         labels.add(newsHidden ? "Show news headlines" : "Hide news headlines");
         acts.add(() -> toggle("hideNews"));

@@ -18,19 +18,44 @@ final class Glance {
 
     static final class Weather {
         int temp, hi, lo, code;
+        int wind = -1, windDir;
         boolean isDay = true;
         String condition;
     }
 
     private static final String WEATHER_URL =
             "https://api.open-meteo.com/v1/forecast?latitude=-33.8915&longitude=151.2767"
-                    + "&current=temperature_2m,weather_code,is_day"
+                    + "&current=temperature_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m"
                     + "&daily=temperature_2m_max,temperature_2m_min"
                     + "&timezone=Australia%2FSydney&forecast_days=1";
 
     private static final String NEWS_URL = "https://www.abc.net.au/news/feed/51120/rss.xml";
 
     private Glance() {
+    }
+
+    static final class Surf {
+        double wave, period, water = Double.NaN;
+        int dir;
+    }
+
+    /** Bondi swell and water temperature from the Open-Meteo marine API (no key needed). */
+    static Surf surf() {
+        try {
+            JSONObject o = new JSONObject(get("https://marine-api.open-meteo.com/v1/marine"
+                    + "?latitude=-33.8915&longitude=151.2767"
+                    + "&current=wave_height,wave_period,wave_direction,sea_surface_temperature"
+                    + "&timezone=Australia%2FSydney"));
+            JSONObject c = o.getJSONObject("current");
+            Surf s = new Surf();
+            s.wave = c.getDouble("wave_height");
+            s.period = c.optDouble("wave_period", 0);
+            s.dir = (int) Math.round(c.optDouble("wave_direction", 90));
+            s.water = c.optDouble("sea_surface_temperature", Double.NaN);
+            return s;
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     static Weather weather() {
@@ -56,6 +81,8 @@ final class Glance {
                     : (l.contains("overcast") || l.contains("cloudy") && !l.contains("partly")) ? 3
                     : l.contains("partly") ? 2 : 0;
             w.condition = d.isEmpty() ? describe(w.code) : Character.toUpperCase(d.charAt(0)) + d.substring(1).toLowerCase();
+            w.wind = Integer.parseInt(cur.optString("windspeedKmph", "-1"));
+            w.windDir = Integer.parseInt(cur.optString("winddirDegree", "0"));
             int h = MainActivity.sydneyHour();
             w.isDay = h >= 6 && h < 20;
             return w;
@@ -74,6 +101,10 @@ final class Glance {
             w.code = cur.getInt("weather_code");
             w.condition = describe(w.code);
             w.isDay = cur.optInt("is_day", 1) == 1;
+            if (cur.has("wind_speed_10m")) {
+                w.wind = (int) Math.round(cur.getDouble("wind_speed_10m"));
+                w.windDir = (int) Math.round(cur.optDouble("wind_direction_10m", 0));
+            }
             w.hi = (int) Math.round(daily.getJSONArray("temperature_2m_max").getDouble(0));
             w.lo = (int) Math.round(daily.getJSONArray("temperature_2m_min").getDouble(0));
             return w;
